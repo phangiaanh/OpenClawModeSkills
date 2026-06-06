@@ -99,6 +99,8 @@ def setmode(data, mode_id):
 
 def toggle(data, topic_id):
     mode_id = data["current_active_mode"]
+    if not mode_id or mode_id not in data["modes"]:
+        raise ConfigError(f"no valid active mode set (got: {mode_id!r})")
     topics = data["modes"][mode_id]["topics"]
     if topic_id not in topics:
         raise ConfigError(f"unknown topic: {topic_id} in mode {mode_id}")
