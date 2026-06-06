@@ -10,12 +10,12 @@ metadata:
 
 Configure the Epaphras listening agent over Telegram. A two-screen inline
 keyboard lets the user pick an active **mode** and toggle that mode's **topics**.
-Every change is written through immediately to `modes.yaml` — there is no Save
+Every change is written through immediately to `modes.json` — there is no Save
 button.
 
 ## Engine
 
-All state lives in `modes.yaml`. **Never hand-edit the YAML or build button JSON
+All state lives in `modes.json`. **Never hand-edit the YAML or build button JSON
 yourself** — always call the engine:
 
 ```
@@ -72,11 +72,11 @@ If the panel message ID is not available, fall back to sending a new message
 instead of editing.
 
 If the engine exits non-zero with `{ "error": ... }`, send `⚠️ <error>` as a
-plain text message; do **not** overwrite `modes.yaml`.
+plain text message; do **not** overwrite `modes.json`.
 
 ## Notes
 
-- `modes.yaml` is the single source of truth; the engine writes a `.bak` before
+- `modes.json` is the single source of truth; the engine writes a `.bak` before
   each save and preserves comments and key order.
 - Selecting a mode both activates it (`current_active_mode`) and opens its topics.
 - Each mode retains its own topic states independently.

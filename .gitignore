@@ -1,5 +1,6 @@
-modes.yaml
+modes.json
 *.bak
+*.tmp
 __pycache__/
 *.pyc
 .pytest_cache/

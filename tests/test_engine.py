@@ -8,13 +8,13 @@ import pytest
 
 import engine
 
-FIXTURE = Path(__file__).parent / "fixtures" / "modes.sample.yaml"
+FIXTURE = Path(__file__).parent / "fixtures" / "modes.sample.json"
 
 
 @pytest.fixture
 def cfg(tmp_path):
     """A live config file seeded from the fixture, returned as a path."""
-    dst = tmp_path / "modes.yaml"
+    dst = tmp_path / "modes.json"
     dst.write_text(FIXTURE.read_text())
     return dst
 
@@ -45,8 +45,8 @@ def test_load_config_reads_modes(cfg):
 
 
 def test_load_config_rejects_malformed(tmp_path):
-    bad = tmp_path / "bad.yaml"
-    bad.write_text("current_active_mode: [unclosed\n")
+    bad = tmp_path / "bad.json"
+    bad.write_text("{unclosed json")
     with pytest.raises(engine.ConfigError):
         engine.load_config(bad)
 
@@ -57,19 +57,18 @@ def test_save_config_writes_backup(cfg):
     assert Path(str(cfg) + ".bak").exists()
 
 
-def test_save_config_preserves_comments_and_order(cfg):
+def test_save_config_writes_valid_json_with_indent(cfg):
     data = engine.load_config(cfg)
     engine.save_config(cfg, data)
     text = cfg.read_text()
-    assert text.startswith("# Active system envelope state")
-    # key order preserved: deep_research appears before culture_drama in the modes block
-    modes_block = text[text.index("modes:"):]
-    assert modes_block.index("deep_research") < modes_block.index("culture_drama")
+    parsed = json.loads(text)
+    assert parsed["current_active_mode"] == "culture_drama"
+    assert "  " in text  # indented (2-space)
 
 
 def test_load_config_rejects_missing_modes_key(tmp_path):
-    bad = tmp_path / "no_modes.yaml"
-    bad.write_text("current_active_mode: foo\n")
+    bad = tmp_path / "no_modes.json"
+    bad.write_text('{"current_active_mode": "foo"}\n')
     with pytest.raises(engine.ConfigError, match="missing"):
         engine.load_config(bad)
 

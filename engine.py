@@ -1,19 +1,12 @@
-"""Epaphras Modes engine: modes.yaml IO, mutation, and Telegram payload rendering."""
+"""Epaphras Modes engine: modes.json IO, mutation, and Telegram payload rendering."""
 import json
 import os
 import shutil
 import sys
 from pathlib import Path
 
-from ruamel.yaml import YAML
-
-DEFAULT_TEMPLATE = Path(__file__).parent / "templates" / "modes.default.yaml"
-DEFAULT_FILE = Path(__file__).parent / "modes.yaml"
-
-def _make_yaml():
-    y = YAML()
-    y.preserve_quotes = True
-    return y
+DEFAULT_TEMPLATE = Path(__file__).parent / "templates" / "modes.default.json"
+DEFAULT_FILE = Path(__file__).parent / "modes.json"
 
 
 class ConfigError(Exception):
@@ -44,8 +37,8 @@ def ensure_file(path, template=None):
 def load_config(path):
     try:
         with open(path, encoding="utf-8") as f:
-            data = _make_yaml().load(f)
-    except Exception as e:  # ruamel raises various parse errors
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
         raise ConfigError(f"config unreadable: {e}")
     if not data or "modes" not in data:
         raise ConfigError("config missing 'modes'")
@@ -58,7 +51,8 @@ def save_config(path, data):
         shutil.copyfile(path, Path(str(path) + ".bak"))
     tmp = path.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
-        _make_yaml().dump(data, f)
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
     tmp.replace(path)  # atomic on POSIX
 
 
