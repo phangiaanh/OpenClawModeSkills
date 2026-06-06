@@ -81,36 +81,41 @@ def test_ensure_file_raises_config_error_when_template_missing(tmp_path):
         engine.ensure_file(target, template=str(missing_template))
 
 
+def _flat_buttons(out):
+    """Flatten presentation blocks into a list of button dicts."""
+    return [b for block in out["presentation"]["blocks"] for b in block["buttons"]]
+
+
 def test_render_modes_marks_active(cfg):
     data = engine.load_config(cfg)
     out = engine.render_modes(data)
-    assert "buttons" in out and "text" in out
-    rows = out["buttons"]
-    assert len(rows) == 4
-    flat = [b for row in rows for b in row]
-    active = next(b for b in flat if b["callback_data"] == "cb_setmode:culture_drama")
-    assert "▶️" in active["text"]
-    inactive = next(b for b in flat if b["callback_data"] == "cb_setmode:deep_research")
-    assert "▶️" not in inactive["text"]
+    assert "presentation" in out and "message" in out
+    blocks = out["presentation"]["blocks"]
+    assert len(blocks) == 4
+    flat = _flat_buttons(out)
+    active = next(b for b in flat if b["value"] == "cb_setmode:culture_drama")
+    assert "▶️" in active["label"]
+    inactive = next(b for b in flat if b["value"] == "cb_setmode:deep_research")
+    assert "▶️" not in inactive["label"]
 
 
 def test_render_topics_shows_toggle_marks(cfg):
     data = engine.load_config(cfg)
     out = engine.render_topics(data, "culture_drama")
-    flat = [b for row in out["buttons"] for b in row]
-    esports = next(b for b in flat if b["callback_data"] == "cb_toggle:esports")
-    assert esports["text"].startswith("✅")  # active: true in fixture
-    memes = next(b for b in flat if b["callback_data"] == "cb_toggle:viral_memes")
-    assert memes["text"].startswith("⬜")  # active: false
+    flat = _flat_buttons(out)
+    esports = next(b for b in flat if b["value"] == "cb_toggle:esports")
+    assert esports["label"].startswith("✅")  # active: true in fixture
+    memes = next(b for b in flat if b["value"] == "cb_toggle:viral_memes")
+    assert memes["label"].startswith("⬜")  # active: false
     back = flat[-1]
-    assert back["callback_data"] == "cb_back"
-    assert "TikTok + Threads" in out["text"]
+    assert back["value"] == "cb_back"
+    assert "TikTok + Threads" in out["message"]
 
 
 def test_render_topics_defaults_to_active_mode(cfg):
     data = engine.load_config(cfg)
     out = engine.render_topics(data)  # no mode arg -> current_active_mode
-    assert "🎭" in out["text"]
+    assert "🎭" in out["message"]
 
 
 def test_render_topics_unknown_mode_raises(cfg):
@@ -160,13 +165,13 @@ def run_cli(cfg, *args):
 def test_cli_render_modes(cfg):
     rc, out = run_cli(cfg, "render-modes")
     assert rc == 0
-    assert len(out["buttons"]) == 4
+    assert len(out["presentation"]["blocks"]) == 4
 
 
 def test_cli_setmode_persists_and_returns_topics(cfg):
     rc, out = run_cli(cfg, "setmode", "global_news")
     assert rc == 0
-    assert "🚨" in out["text"]
+    assert "🚨" in out["message"]
     assert engine.load_config(cfg)["current_active_mode"] == "global_news"
 
 
@@ -179,7 +184,7 @@ def test_cli_toggle_persists(cfg):
 def test_cli_render_topics_with_mode_flag(cfg):
     rc, out = run_cli(cfg, "render-topics", "--mode", "deep_research")
     assert rc == 0
-    assert "📚" in out["text"]
+    assert "📚" in out["message"]
 
 
 def test_cli_unknown_id_returns_error_envelope(cfg):
