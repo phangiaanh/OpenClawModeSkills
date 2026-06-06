@@ -60,3 +60,29 @@ def save_config(path, data):
     with open(tmp, "w", encoding="utf-8") as f:
         _make_yaml().dump(data, f)
     tmp.replace(path)  # atomic on POSIX
+
+
+def render_modes(data):
+    active = data.get("current_active_mode")
+    buttons = []
+    for mode_id, mode in data["modes"].items():
+        label = f"{mode['icon']} {mode['name']}"
+        if mode_id == active:
+            label += " ▶️"
+        buttons.append([{"text": label, "callback_data": f"cb_setmode:{mode_id}"}])
+    return {"text": "Epaphras — Listening Config\nPick a mode:", "buttons": buttons}
+
+
+def render_topics(data, mode_id=None):
+    mode_id = mode_id or data.get("current_active_mode")
+    if mode_id not in data["modes"]:
+        raise ConfigError(f"unknown mode: {mode_id}")
+    mode = data["modes"][mode_id]
+    platforms = " + ".join(mode["platforms"])
+    text = f"{mode['icon']} {mode['name']}\nPlatforms: {platforms}\nTap a topic to toggle:"
+    buttons = []
+    for topic_id, topic in mode["topics"].items():
+        mark = "✅" if topic["active"] else "⬜"
+        buttons.append([{"text": f"{mark} {topic['label']}", "callback_data": f"cb_toggle:{topic_id}"}])
+    buttons.append([{"text": "⬅️ Back to modes", "callback_data": "cb_back"}])
+    return {"text": text, "buttons": buttons}
