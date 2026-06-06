@@ -1,0 +1,43 @@
+# Active system envelope state managed by OpenClaw UI skill handler
+current_active_mode: "culture_drama"  # deep_research | culture_drama | global_news | venture_intel
+
+modes:
+  deep_research:
+    name: "Research & Deep Dive"
+    icon: "📚"
+    platforms: ["LinkedIn", "Reddit"]
+    topics:
+      academic_papers: { label: "Academic Papers", active: true }
+      tech_forums: { label: "Technical Forums", active: false }
+      ai_ml_arch: { label: "AI/ML Architecture", active: true }
+      community_sentiment: { label: "Community Sentiment", active: false }
+
+  culture_drama:
+    name: "Drama & Cultural Pulse"
+    icon: "🎭"
+    platforms: ["TikTok", "Threads"]
+    topics:
+      esports: { label: "Esports Drama", active: true }
+      vtuber_gossip: { label: "Vtuber/Streamer Gossip", active: true }
+      viral_memes: { label: "Viral Memes", active: false }
+      cancel_culture: { label: "Cancel Culture", active: false }
+
+  global_news:
+    name: "Breaking News & Global Alert"
+    icon: "🚨"
+    platforms: ["X", "Telegram"]
+    topics:
+      geopolitics: { label: "Geopolitical Crises", active: false }
+      market_meltdown: { label: "Market Meltdowns", active: true }
+      tech_breakouts: { label: "Tech Breakouts", active: true }
+      disasters: { label: "Weather Disasters", active: false }
+
+  venture_intel:
+    name: "Venture & Market Intelligence"
+    icon: "💼"
+    platforms: ["LinkedIn", "Product Hunt"]
+    topics:
+      vc_funding: { label: "VC Funding Drops", active: false }
+      stealth_hires: { label: "Stealth Engineering Waves", active: false }
+      ph_launches: { label: "Product Hunt Launches", active: true }
+      exec_migration: { label: "Executive Migrations", active: false }
