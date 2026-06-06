@@ -78,6 +78,22 @@ back to `action: "send"` (sends a new message).
 If the engine exits non-zero, call the `message` tool with `action: "send"` and
 `message: "⚠️ <error>"` (no buttons); do **not** overwrite `modes.json`.
 
+## Fallback: buttons not working
+
+If the `message` tool rejects the `buttons` field (known serialization bug in
+some builds), send a plain-text menu instead and accept a number reply:
+
+```
+Epaphras — Listening Config. Reply with a number:
+1. 📚 Research & Deep Dive
+2. 🎭 Drama & Cultural Pulse  [active]
+3. 🚨 Breaking News & Global Alert
+4. 💼 Venture & Market Intelligence
+```
+
+Map the reply to `engine.py setmode <mode_id>`. For topic toggles, list topics
+with their current state and accept a number to flip one.
+
 ## Notes
 
 - `modes.json` is the single source of truth; the engine writes a `.bak` before
