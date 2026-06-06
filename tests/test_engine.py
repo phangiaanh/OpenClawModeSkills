@@ -145,3 +145,55 @@ def test_toggle_unknown_topic_raises(cfg):
     data = engine.load_config(cfg)
     with pytest.raises(engine.ConfigError):
         engine.toggle(data, "not_a_topic")
+
+
+def run_cli(cfg, *args):
+    """Invoke engine.py as a subprocess against cfg; return (rc, parsed_json)."""
+    root = Path(__file__).parent.parent
+    proc = subprocess.run(
+        [sys.executable, str(root / "engine.py"), *args, "--file", str(cfg)],
+        capture_output=True, text=True,
+    )
+    return proc.returncode, json.loads(proc.stdout)
+
+
+def test_cli_render_modes(cfg):
+    rc, out = run_cli(cfg, "render-modes")
+    assert rc == 0
+    assert len(out["buttons"]) == 4
+
+
+def test_cli_setmode_persists_and_returns_topics(cfg):
+    rc, out = run_cli(cfg, "setmode", "global_news")
+    assert rc == 0
+    assert "🚨" in out["text"]
+    assert engine.load_config(cfg)["current_active_mode"] == "global_news"
+
+
+def test_cli_toggle_persists(cfg):
+    rc, out = run_cli(cfg, "toggle", "viral_memes")
+    assert rc == 0
+    assert engine.load_config(cfg)["modes"]["culture_drama"]["topics"]["viral_memes"]["active"] is True
+
+
+def test_cli_render_topics_with_mode_flag(cfg):
+    rc, out = run_cli(cfg, "render-topics", "--mode", "deep_research")
+    assert rc == 0
+    assert "📚" in out["text"]
+
+
+def test_cli_unknown_id_returns_error_envelope(cfg):
+    rc, out = run_cli(cfg, "setmode", "ghost")
+    assert rc == 1
+    assert "error" in out
+
+
+def test_cli_init_seeds(tmp_path):
+    target = tmp_path / "fresh.yaml"
+    root = Path(__file__).parent.parent
+    proc = subprocess.run(
+        [sys.executable, str(root / "engine.py"), "init", "--file", str(target)],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0
+    assert target.exists()

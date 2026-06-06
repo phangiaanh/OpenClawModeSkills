@@ -106,3 +106,52 @@ def toggle(data, topic_id):
         raise ConfigError(f"unknown topic: {topic_id} in mode {mode_id}")
     topics[topic_id]["active"] = not bool(topics[topic_id]["active"])
     return data
+
+
+def _emit(obj):
+    print(json.dumps(obj, ensure_ascii=False))
+
+
+def main(argv=None):
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Epaphras Modes engine")
+    parser.add_argument(
+        "command",
+        choices=["render-modes", "render-topics", "setmode", "toggle", "init"],
+    )
+    parser.add_argument("arg", nargs="?", help="mode_id or topic_id")
+    parser.add_argument("--file", help="path to modes.yaml")
+    parser.add_argument("--mode", help="mode id for render-topics")
+    args = parser.parse_args(argv)
+
+    path = resolve_path(args.file)
+    try:
+        if args.command == "init":
+            ensure_file(path)
+            _emit({"text": f"initialized {path}", "buttons": []})
+            return 0
+
+        ensure_file(path)
+        data = load_config(path)
+
+        if args.command == "render-modes":
+            _emit(render_modes(data))
+        elif args.command == "render-topics":
+            _emit(render_topics(data, args.mode))
+        elif args.command == "setmode":
+            setmode(data, args.arg)
+            save_config(path, data)
+            _emit(render_topics(data, args.arg))
+        elif args.command == "toggle":
+            toggle(data, args.arg)
+            save_config(path, data)
+            _emit(render_topics(data))
+        return 0
+    except ConfigError as e:
+        _emit({"error": str(e)})
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
