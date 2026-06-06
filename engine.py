@@ -75,6 +75,8 @@ def render_modes(data):
 
 def render_topics(data, mode_id=None):
     mode_id = mode_id or data.get("current_active_mode")
+    if mode_id is None:
+        raise ConfigError("no active mode set")
     if mode_id not in data["modes"]:
         raise ConfigError(f"unknown mode: {mode_id}")
     mode = data["modes"][mode_id]
