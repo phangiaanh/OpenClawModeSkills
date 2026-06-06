@@ -117,3 +117,31 @@ def test_render_topics_unknown_mode_raises(cfg):
     data = engine.load_config(cfg)
     with pytest.raises(engine.ConfigError):
         engine.render_topics(data, "nope")
+
+
+def test_setmode_changes_active_only(cfg):
+    data = engine.load_config(cfg)
+    engine.setmode(data, "global_news")
+    assert data["current_active_mode"] == "global_news"
+    # other modes' topics untouched
+    assert data["modes"]["culture_drama"]["topics"]["esports"]["active"] is True
+
+
+def test_setmode_unknown_raises(cfg):
+    data = engine.load_config(cfg)
+    with pytest.raises(engine.ConfigError):
+        engine.setmode(data, "ghost")
+
+
+def test_toggle_flips_only_target_in_active_mode(cfg):
+    data = engine.load_config(cfg)  # active = culture_drama
+    engine.toggle(data, "viral_memes")  # was False
+    assert data["modes"]["culture_drama"]["topics"]["viral_memes"]["active"] is True
+    # sibling unchanged
+    assert data["modes"]["culture_drama"]["topics"]["esports"]["active"] is True
+
+
+def test_toggle_unknown_topic_raises(cfg):
+    data = engine.load_config(cfg)
+    with pytest.raises(engine.ConfigError):
+        engine.toggle(data, "not_a_topic")

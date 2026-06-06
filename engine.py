@@ -88,3 +88,19 @@ def render_topics(data, mode_id=None):
         buttons.append([{"text": f"{mark} {topic['label']}", "callback_data": f"cb_toggle:{topic_id}"}])
     buttons.append([{"text": "⬅️ Back to modes", "callback_data": "cb_back"}])
     return {"text": text, "buttons": buttons}
+
+
+def setmode(data, mode_id):
+    if mode_id not in data["modes"]:
+        raise ConfigError(f"unknown mode: {mode_id}")
+    data["current_active_mode"] = mode_id
+    return data
+
+
+def toggle(data, topic_id):
+    mode_id = data["current_active_mode"]
+    topics = data["modes"][mode_id]["topics"]
+    if topic_id not in topics:
+        raise ConfigError(f"unknown topic: {topic_id} in mode {mode_id}")
+    topics[topic_id]["active"] = not bool(topics[topic_id]["active"])
+    return data
