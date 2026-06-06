@@ -3,3 +3,10 @@ modes.yaml
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Python virtualenv directories
+venv/
+.venv/
+
+# Credentials / environment variables
+.env
