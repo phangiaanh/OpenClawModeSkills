@@ -98,7 +98,7 @@ def setmode(data, mode_id):
 
 
 def toggle(data, topic_id):
-    mode_id = data["current_active_mode"]
+    mode_id = data.get("current_active_mode")
     if not mode_id or mode_id not in data["modes"]:
         raise ConfigError(f"no valid active mode set (got: {mode_id!r})")
     topics = data["modes"][mode_id]["topics"]
@@ -138,12 +138,21 @@ def main(argv=None):
         if args.command == "render-modes":
             _emit(render_modes(data))
         elif args.command == "render-topics":
+            if args.arg:
+                _emit({"error": "render-topics takes --mode <id>, not a positional argument"})
+                return 1
             _emit(render_topics(data, args.mode))
         elif args.command == "setmode":
+            if not args.arg:
+                _emit({"error": "setmode requires a mode_id argument"})
+                return 1
             setmode(data, args.arg)
             save_config(path, data)
             _emit(render_topics(data, args.arg))
         elif args.command == "toggle":
+            if not args.arg:
+                _emit({"error": "toggle requires a topic_id argument"})
+                return 1
             toggle(data, args.arg)
             save_config(path, data)
             _emit(render_topics(data))

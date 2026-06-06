@@ -197,3 +197,30 @@ def test_cli_init_seeds(tmp_path):
     )
     assert proc.returncode == 0
     assert target.exists()
+
+
+def test_toggle_raises_config_error_when_active_mode_key_missing():
+    data = {"modes": {"deep_research": {"topics": {"academic_papers": {"active": True}}}}}
+    with pytest.raises(engine.ConfigError):
+        engine.toggle(data, "academic_papers")
+
+
+def test_cli_setmode_without_arg_returns_error(cfg):
+    rc, out = run_cli(cfg, "setmode")
+    assert rc == 1
+    assert "error" in out
+    assert "mode_id" in out["error"]
+
+
+def test_cli_toggle_without_arg_returns_error(cfg):
+    rc, out = run_cli(cfg, "toggle")
+    assert rc == 1
+    assert "error" in out
+    assert "topic_id" in out["error"]
+
+
+def test_cli_render_topics_with_positional_arg_returns_error(cfg):
+    rc, out = run_cli(cfg, "render-topics", "culture_drama")
+    assert rc == 1
+    assert "error" in out
+    assert "--mode" in out["error"]
