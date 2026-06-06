@@ -15,18 +15,19 @@ button.
 
 ## Engine
 
-All state lives in `modes.json`. **Never hand-edit the YAML or build button JSON
-yourself** — always call the engine:
+All state lives in `modes.json`. **Never hand-edit it or build button JSON
+yourself** — always call the engine and pass its output directly to the
+`message` tool:
 
 ```
 python3 <skill_dir>/engine.py <command> [arg] [--mode <id>]
 ```
 
-The engine prints one JSON object:
+The engine prints one JSON object on success:
 ```json
-{ "message": "...", "presentation": { "blocks": [ {"type": "buttons", "buttons": [{"label": "...", "value": "..."}]} ] } }
+{ "text": "...", "buttons": [[{"text": "...", "callback_data": "..."}]] }
 ```
-or `{ "error": "..." }` on failure (non-zero exit).
+or `{ "error": "..." }` with a non-zero exit code on failure.
 
 Commands:
 - `render-modes` — Screen 1 (mode list)
@@ -34,45 +35,48 @@ Commands:
 - `setmode <mode_id>` — activate a mode, persist, return its Screen 2
 - `toggle <topic_id>` — flip a topic in the active mode, persist, return Screen 2
 
+## Calling the `message` tool
+
+The `message` tool schema for Telegram inline keyboards:
+
+```json
+{
+  "action": "send",
+  "channel": "telegram",
+  "to": "<current_chat_id>",
+  "message": "<engine output: text field>",
+  "buttons": "<engine output: buttons field — pass as-is>"
+}
+```
+
+`<current_chat_id>` is the chat ID from the current incoming message context.
+`buttons` is the 2-D array the engine already produces — do **not** unwrap,
+flatten, or reformat it.
+
 ## Opening the panel (`/modes`)
 
-1. Run the engine: `python3 <skill_dir>/engine.py render-modes`
-2. Send the panel to the current chat:
-   ```
-   openclaw message send --channel telegram --target <current_chat_id> \
-     --message "<output.message>" \
-     --presentation '<output.presentation as JSON string>' \
-     --json
-   ```
-   Capture the returned message ID from `--json` output — you'll need it to edit
-   in place on button taps.
-
-`<current_chat_id>` is the chat ID of the incoming session (available from the
-current message context).
+1. Run: `python3 <skill_dir>/engine.py render-modes`
+2. Call the `message` tool with `action: "send"`, mapping:
+   - `message` ← engine `text`
+   - `buttons` ← engine `buttons` (pass as-is)
 
 ## Handling button taps
 
 Button taps arrive as `callback_data: <value>` in the user message. Route by
-prefix, run the engine, then **edit the panel message in place**:
+prefix, run the engine, then call the `message` tool with `action: "edit"` and
+the same field mapping to update the panel in place:
 
-```
-openclaw message edit --channel telegram --target <current_chat_id> \
-  --message-id <panel_message_id> \
-  --message "<output.message>" \
-  --presentation '<output.presentation as JSON string>'
-```
-
-| Incoming value | Run | Screen shown |
-|----------------|-----|--------------|
+| Incoming `callback_data` | Run | Screen shown |
+|--------------------------|-----|--------------|
 | `cb_setmode:<mode_id>` | `engine.py setmode <mode_id>` | Screen 2 |
 | `cb_toggle:<topic_id>` | `engine.py toggle <topic_id>` | Screen 2 |
 | `cb_back` | `engine.py render-modes` | Screen 1 |
 
-If the panel message ID is not available, fall back to sending a new message
-instead of editing.
+If `action: "edit"` is not supported or the message ID is unavailable, fall
+back to `action: "send"` (sends a new message).
 
-If the engine exits non-zero with `{ "error": ... }`, send `⚠️ <error>` as a
-plain text message; do **not** overwrite `modes.json`.
+If the engine exits non-zero, call the `message` tool with `action: "send"` and
+`message: "⚠️ <error>"` (no buttons); do **not** overwrite `modes.json`.
 
 ## Notes
 

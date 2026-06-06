@@ -56,26 +56,15 @@ def save_config(path, data):
     tmp.replace(path)  # atomic on POSIX
 
 
-def _btn(label, value):
-    return {"label": label, "value": value}
-
-
-def _block(label, value):
-    return {"type": "buttons", "buttons": [_btn(label, value)]}
-
-
 def render_modes(data):
     active = data.get("current_active_mode")
-    blocks = []
+    buttons = []
     for mode_id, mode in data["modes"].items():
         label = f"{mode['icon']} {mode['name']}"
         if mode_id == active:
             label += " ▶️"
-        blocks.append(_block(label, f"cb_setmode:{mode_id}"))
-    return {
-        "message": "Epaphras — Listening Config\nPick a mode:",
-        "presentation": {"blocks": blocks},
-    }
+        buttons.append([{"text": label, "callback_data": f"cb_setmode:{mode_id}"}])
+    return {"text": "Epaphras — Listening Config\nPick a mode:", "buttons": buttons}
 
 
 def render_topics(data, mode_id=None):
@@ -86,13 +75,13 @@ def render_topics(data, mode_id=None):
         raise ConfigError(f"unknown mode: {mode_id}")
     mode = data["modes"][mode_id]
     platforms = " + ".join(mode["platforms"])
-    message = f"{mode['icon']} {mode['name']}\nPlatforms: {platforms}\nTap a topic to toggle:"
-    blocks = []
+    text = f"{mode['icon']} {mode['name']}\nPlatforms: {platforms}\nTap a topic to toggle:"
+    buttons = []
     for topic_id, topic in mode["topics"].items():
         mark = "✅" if topic["active"] else "⬜"
-        blocks.append(_block(f"{mark} {topic['label']}", f"cb_toggle:{topic_id}"))
-    blocks.append(_block("⬅️ Back to modes", "cb_back"))
-    return {"message": message, "presentation": {"blocks": blocks}}
+        buttons.append([{"text": f"{mark} {topic['label']}", "callback_data": f"cb_toggle:{topic_id}"}])
+    buttons.append([{"text": "⬅️ Back to modes", "callback_data": "cb_back"}])
+    return {"text": text, "buttons": buttons}
 
 
 def setmode(data, mode_id):
@@ -134,7 +123,7 @@ def main(argv=None):
     try:
         if args.command == "init":
             ensure_file(path)
-            _emit({"message": f"initialized {path}"})
+            _emit({"text": f"initialized {path}"})
             return 0
 
         ensure_file(path)
