@@ -120,12 +120,35 @@ Then re-send the updated topic menu.
 If the engine exits non-zero, send `⚠️ <error>` as plain text; do **not**
 overwrite `modes.json`.
 
-## When buttons work again
+## Trying inline keyboard (OpenClaw 2026.4+)
 
-The engine already outputs the correct `{text, buttons: [[{text, callback_data}]]}`
-format. When the host serialization bug is fixed, replace the text-menu flow
-above with: call `message` tool with `action: "send"`, `message` ← engine
-`text`, `buttons` ← engine `buttons` (pass as-is, no reformatting).
+The engine now outputs **both** `buttons` and `inline_keyboard` (same 2-D array,
+two field names). Try `inline_keyboard` first — it matches the Telegram Bot API
+field name and may be what the upgraded host expects:
+
+```json
+{
+  "action": "send",
+  "channel": "telegram",
+  "to": "<current_chat_id>",
+  "message": "<engine text>",
+  "inline_keyboard": "<engine inline_keyboard — pass as-is>"
+}
+```
+
+If that still renders as raw text, fall back to `buttons`:
+
+```json
+{
+  "action": "send",
+  "channel": "telegram",
+  "to": "<current_chat_id>",
+  "message": "<engine text>",
+  "buttons": "<engine buttons — pass as-is>"
+}
+```
+
+If neither works, use the text-menu flow above.
 
 ## Notes
 

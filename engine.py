@@ -58,13 +58,14 @@ def save_config(path, data):
 
 def render_modes(data):
     active = data.get("current_active_mode")
-    buttons = []
+    rows = []
     for mode_id, mode in data["modes"].items():
         label = f"{mode['icon']} {mode['name']}"
         if mode_id == active:
             label += " ▶️"
-        buttons.append([{"text": label, "callback_data": f"cb_setmode:{mode_id}"}])
-    return {"text": "Epaphras — Listening Config\nPick a mode:", "buttons": buttons}
+        rows.append([{"text": label, "callback_data": f"cb_setmode:{mode_id}"}])
+    # Both field names emitted: "buttons" (pre-2026.4) and "inline_keyboard" (Telegram-native, 2026.4+)
+    return {"text": "Epaphras — Listening Config\nPick a mode:", "buttons": rows, "inline_keyboard": rows}
 
 
 def render_topics(data, mode_id=None):
@@ -76,12 +77,13 @@ def render_topics(data, mode_id=None):
     mode = data["modes"][mode_id]
     platforms = " + ".join(mode["platforms"])
     text = f"{mode['icon']} {mode['name']}\nPlatforms: {platforms}\nTap a topic to toggle:"
-    buttons = []
+    rows = []
     for topic_id, topic in mode["topics"].items():
         mark = "✅" if topic["active"] else "⬜"
-        buttons.append([{"text": f"{mark} {topic['label']}", "callback_data": f"cb_toggle:{topic_id}"}])
-    buttons.append([{"text": "⬅️ Back to modes", "callback_data": "cb_back"}])
-    return {"text": text, "buttons": buttons}
+        rows.append([{"text": f"{mark} {topic['label']}", "callback_data": f"cb_toggle:{topic_id}"}])
+    rows.append([{"text": "⬅️ Back to modes", "callback_data": "cb_back"}])
+    # Both field names emitted: "buttons" (pre-2026.4) and "inline_keyboard" (Telegram-native, 2026.4+)
+    return {"text": text, "buttons": rows, "inline_keyboard": rows}
 
 
 def setmode(data, mode_id):

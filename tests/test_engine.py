@@ -83,7 +83,7 @@ def test_ensure_file_raises_config_error_when_template_missing(tmp_path):
 def test_render_modes_marks_active(cfg):
     data = engine.load_config(cfg)
     out = engine.render_modes(data)
-    assert "buttons" in out and "text" in out
+    assert "buttons" in out and "text" in out and "inline_keyboard" in out
     rows = out["buttons"]
     assert len(rows) == 4
     flat = [b for row in rows for b in row]
@@ -91,11 +91,13 @@ def test_render_modes_marks_active(cfg):
     assert "▶️" in active["text"]
     inactive = next(b for b in flat if b["callback_data"] == "cb_setmode:deep_research")
     assert "▶️" not in inactive["text"]
+    assert out["inline_keyboard"] == out["buttons"]
 
 
 def test_render_topics_shows_toggle_marks(cfg):
     data = engine.load_config(cfg)
     out = engine.render_topics(data, "culture_drama")
+    assert out["inline_keyboard"] == out["buttons"]
     flat = [b for row in out["buttons"] for b in row]
     esports = next(b for b in flat if b["callback_data"] == "cb_toggle:esports")
     assert esports["text"].startswith("✅")  # active: true in fixture
