@@ -55,44 +55,77 @@ flatten, or reformat it.
 
 ## Opening the panel (`/modes`)
 
+Run the engine and send a numbered text menu — do **not** use the `buttons`
+field (known serialization bug in the current build; buttons code is correct
+and will work once the host is patched):
+
 1. Run: `python3 <skill_dir>/engine.py render-modes`
-2. Call the `message` tool with `action: "send"`, mapping:
-   - `message` ← engine `text`
-   - `buttons` ← engine `buttons` (pass as-is)
-
-## Handling button taps
-
-Button taps arrive as `callback_data: <value>` in the user message. Route by
-prefix, run the engine, then call the `message` tool with `action: "edit"` and
-the same field mapping to update the panel in place:
-
-| Incoming `callback_data` | Run | Screen shown |
-|--------------------------|-----|--------------|
-| `cb_setmode:<mode_id>` | `engine.py setmode <mode_id>` | Screen 2 |
-| `cb_toggle:<topic_id>` | `engine.py toggle <topic_id>` | Screen 2 |
-| `cb_back` | `engine.py render-modes` | Screen 1 |
-
-If `action: "edit"` is not supported or the message ID is unavailable, fall
-back to `action: "send"` (sends a new message).
-
-If the engine exits non-zero, call the `message` tool with `action: "send"` and
-`message: "⚠️ <error>"` (no buttons); do **not** overwrite `modes.json`.
-
-## Fallback: buttons not working
-
-If the `message` tool rejects the `buttons` field (known serialization bug in
-some builds), send a plain-text menu instead and accept a number reply:
+2. Build and send a text menu from the engine output:
 
 ```
-Epaphras — Listening Config. Reply with a number:
+Epaphras — Listening Config 📡
+Reply with a number to switch mode:
+
 1. 📚 Research & Deep Dive
-2. 🎭 Drama & Cultural Pulse  [active]
+2. 🎭 Drama & Cultural Pulse  ◀ active
 3. 🚨 Breaking News & Global Alert
 4. 💼 Venture & Market Intelligence
 ```
 
-Map the reply to `engine.py setmode <mode_id>`. For topic toggles, list topics
-with their current state and accept a number to flip one.
+Mark the current `current_active_mode` with `◀ active`. Send as a plain
+`message` tool call with no `buttons` field.
+
+## Handling a mode reply
+
+When the user replies with a number (1–4), map it to the mode id and run:
+
+```
+python3 <skill_dir>/engine.py setmode <mode_id>
+```
+
+Then send the topic menu for that mode (see below).
+
+## Topic menu
+
+After switching mode (or when user asks to see/change topics), run:
+
+```
+python3 <skill_dir>/engine.py render-topics --mode <mode_id>
+```
+
+Build a numbered list from the engine output and send as plain text:
+
+```
+🎭 Drama & Cultural Pulse — topics
+Platforms: TikTok + Threads
+
+1. ✅ Esports Drama
+2. ✅ Vtuber/Streamer Gossip
+3. ⬜ Viral Memes
+4. ⬜ Cancel Culture
+
+Reply with a number to toggle. Reply "back" to return to modes.
+```
+
+When the user replies with a number, run:
+
+```
+python3 <skill_dir>/engine.py toggle <topic_id>
+```
+
+Then re-send the updated topic menu.
+
+## Error handling
+
+If the engine exits non-zero, send `⚠️ <error>` as plain text; do **not**
+overwrite `modes.json`.
+
+## When buttons work again
+
+The engine already outputs the correct `{text, buttons: [[{text, callback_data}]]}`
+format. When the host serialization bug is fixed, replace the text-menu flow
+above with: call `message` tool with `action: "send"`, `message` ← engine
+`text`, `buttons` ← engine `buttons` (pass as-is, no reformatting).
 
 ## Notes
 
