@@ -65,3 +65,17 @@ def test_save_config_preserves_comments_and_order(cfg):
     # key order preserved: deep_research appears before culture_drama in the modes block
     modes_block = text[text.index("modes:"):]
     assert modes_block.index("deep_research") < modes_block.index("culture_drama")
+
+
+def test_load_config_rejects_missing_modes_key(tmp_path):
+    bad = tmp_path / "no_modes.yaml"
+    bad.write_text("current_active_mode: foo\n")
+    with pytest.raises(engine.ConfigError, match="missing"):
+        engine.load_config(bad)
+
+
+def test_ensure_file_raises_config_error_when_template_missing(tmp_path):
+    target = tmp_path / "modes.yaml"
+    missing_template = tmp_path / "nonexistent.yaml"
+    with pytest.raises(engine.ConfigError, match="template not found"):
+        engine.ensure_file(target, template=str(missing_template))

@@ -10,8 +10,10 @@ from ruamel.yaml import YAML
 DEFAULT_TEMPLATE = Path(__file__).parent / "templates" / "modes.default.yaml"
 DEFAULT_FILE = Path(__file__).parent / "modes.yaml"
 
-_yaml = YAML()
-_yaml.preserve_quotes = True
+def _make_yaml():
+    y = YAML()
+    y.preserve_quotes = True
+    return y
 
 
 class ConfigError(Exception):
@@ -32,14 +34,17 @@ def ensure_file(path, template=None):
     if not path.exists():
         src = Path(template) if template else DEFAULT_TEMPLATE
         path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, path)
+        try:
+            shutil.copyfile(src, path)
+        except (FileNotFoundError, OSError) as e:
+            raise ConfigError(f"template not found: {src}") from e
     return path
 
 
 def load_config(path):
     try:
         with open(path, encoding="utf-8") as f:
-            data = _yaml.load(f)
+            data = _make_yaml().load(f)
     except Exception as e:  # ruamel raises various parse errors
         raise ConfigError(f"config unreadable: {e}")
     if not data or "modes" not in data:
@@ -51,5 +56,7 @@ def save_config(path, data):
     path = Path(path)
     if path.exists():
         shutil.copyfile(path, Path(str(path) + ".bak"))
-    with open(path, "w", encoding="utf-8") as f:
-        _yaml.dump(data, f)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        _make_yaml().dump(data, f)
+    tmp.replace(path)  # atomic on POSIX
