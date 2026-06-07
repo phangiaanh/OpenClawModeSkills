@@ -1,6 +1,6 @@
 ---
 name: modes
-description: Configure Epaphras listening modes & topics over Telegram via an inline keyboard
+description: Configure Epaphras listening modes & topics over Telegram via inline keyboard buttons
 user-invocable: true
 metadata:
   openclaw: {"requires":{"bins":["python3"]}}
@@ -11,7 +11,7 @@ metadata:
 Configure the Epaphras listening agent over Telegram. A two-screen inline
 keyboard lets the user pick an active **mode** and toggle that mode's **topics**.
 Every change is written through immediately to `modes.json` — there is no Save
-button.
+step.
 
 ## Engine
 
@@ -37,118 +37,53 @@ Commands:
 
 ## Calling the `message` tool
 
-The `message` tool schema for Telegram inline keyboards:
+Pass the engine output's `text` and `buttons` fields directly to the `message` tool:
 
 ```json
 {
   "action": "send",
   "channel": "telegram",
   "to": "<current_chat_id>",
-  "message": "<engine output: text field>",
-  "buttons": "<engine output: buttons field — pass as-is>"
+  "message": "<engine text>",
+  "buttons": "<engine buttons array>"
 }
 ```
 
 `<current_chat_id>` is the chat ID from the current incoming message context.
-`buttons` is the 2-D array the engine already produces — do **not** unwrap,
-flatten, or reformat it.
+The engine outputs both `buttons` and `inline_keyboard` — use `buttons`.
 
 ## Opening the panel (`/modes`)
 
-Run the engine and send a numbered text menu — do **not** use the `buttons`
-field (known serialization bug in the current build; buttons code is correct
-and will work once the host is patched):
-
 1. Run: `python3 <skill_dir>/engine.py render-modes`
-2. Build and send a text menu from the engine output:
+2. Send the result's `text` and `buttons` directly via the `message` tool.
 
-```
-Epaphras — Listening Config 📡
-Reply with a number to switch mode:
+## Handling a button callback
 
-1. 📚 Research & Deep Dive
-2. 🎭 Drama & Cultural Pulse  ◀ active
-3. 🚨 Breaking News & Global Alert
-4. 💼 Venture & Market Intelligence
-```
+When a callback arrives, read its `data` field and dispatch:
 
-Mark the current `current_active_mode` with `◀ active`. Send as a plain
-`message` tool call with no `buttons` field.
+| `data` prefix | Action |
+|---|---|
+| `cb_setmode:<mode_id>` | `python3 <skill_dir>/engine.py setmode <mode_id>` |
+| `cb_toggle:<topic_id>` | `python3 <skill_dir>/engine.py toggle <topic_id>` |
+| `cb_back` | `python3 <skill_dir>/engine.py render-modes` |
 
-## Handling a mode reply
-
-When the user replies with a number (1–4), map it to the mode id and run:
-
-```
-python3 <skill_dir>/engine.py setmode <mode_id>
-```
-
-Then send the topic menu for that mode (see below).
+Send the engine result (`text` + `buttons`) as a new `message` tool call.
 
 ## Topic menu
 
-After switching mode (or when user asks to see/change topics), run:
+The topic screen is returned automatically by `setmode` and `toggle`.
+To show it directly (e.g. user asks to see topics without switching mode):
 
 ```
 python3 <skill_dir>/engine.py render-topics --mode <mode_id>
 ```
 
-Build a numbered list from the engine output and send as plain text:
-
-```
-🎭 Drama & Cultural Pulse — topics
-Platforms: TikTok + Threads
-
-1. ✅ Esports Drama
-2. ✅ Vtuber/Streamer Gossip
-3. ⬜ Viral Memes
-4. ⬜ Cancel Culture
-
-Reply with a number to toggle. Reply "back" to return to modes.
-```
-
-When the user replies with a number, run:
-
-```
-python3 <skill_dir>/engine.py toggle <topic_id>
-```
-
-Then re-send the updated topic menu.
+Send the result's `text` and `buttons` via the `message` tool.
 
 ## Error handling
 
 If the engine exits non-zero, send `⚠️ <error>` as plain text; do **not**
 overwrite `modes.json`.
-
-## Trying inline keyboard (OpenClaw 2026.4+)
-
-The engine now outputs **both** `buttons` and `inline_keyboard` (same 2-D array,
-two field names). Try `inline_keyboard` first — it matches the Telegram Bot API
-field name and may be what the upgraded host expects:
-
-```json
-{
-  "action": "send",
-  "channel": "telegram",
-  "to": "<current_chat_id>",
-  "message": "<engine text>",
-  "inline_keyboard": "<engine inline_keyboard — pass as-is>"
-}
-```
-
-If that still renders as raw text, fall back to `buttons`:
-
-```json
-{
-  "action": "send",
-  "channel": "telegram",
-  "to": "<current_chat_id>",
-  "message": "<engine text>",
-  "buttons": "<engine buttons — pass as-is>"
-}
-```
-
-If neither works, use the text-menu flow above.
 
 ## Notes
 
