@@ -37,48 +37,38 @@ Commands:
 
 ## Calling the `message` tool
 
-Pass the engine output's `text` and `buttons` fields directly to the `message` tool:
+After every engine call you **must** call the `message` tool immediately.
+Pass the engine's `text` as `message` and its `buttons` array as `buttons`:
 
 ```json
 {
   "action": "send",
   "channel": "telegram",
   "to": "<current_chat_id>",
-  "message": "<engine text>",
-  "buttons": "<engine buttons array>"
+  "message": "<engine output text>",
+  "buttons": "<engine output buttons array>"
 }
 ```
 
-`<current_chat_id>` is the chat ID from the current incoming message context.
-The engine outputs both `buttons` and `inline_keyboard` — use `buttons`.
+`<current_chat_id>` is the numeric chat ID from the current incoming event.
+Do **not** print or paraphrase the engine output — call `message` with it directly.
 
 ## Opening the panel (`/modes`)
 
 1. Run: `python3 <skill_dir>/engine.py render-modes`
-2. Send the result's `text` and `buttons` directly via the `message` tool.
+2. Immediately call `message` with the result's `text` and `buttons`.
 
 ## Handling a button callback
 
 When a callback arrives, read its `data` field and dispatch:
 
-| `data` prefix | Action |
+| `data` prefix | Engine command |
 |---|---|
 | `cb_setmode:<mode_id>` | `python3 <skill_dir>/engine.py setmode <mode_id>` |
 | `cb_toggle:<topic_id>` | `python3 <skill_dir>/engine.py toggle <topic_id>` |
 | `cb_back` | `python3 <skill_dir>/engine.py render-modes` |
 
-Send the engine result (`text` + `buttons`) as a new `message` tool call.
-
-## Topic menu
-
-The topic screen is returned automatically by `setmode` and `toggle`.
-To show it directly (e.g. user asks to see topics without switching mode):
-
-```
-python3 <skill_dir>/engine.py render-topics --mode <mode_id>
-```
-
-Send the result's `text` and `buttons` via the `message` tool.
+Then immediately call `message` with the result's `text` and `buttons`.
 
 ## Error handling
 
