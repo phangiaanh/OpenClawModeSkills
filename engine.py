@@ -238,6 +238,44 @@ def perform_delete(data, spec):
     raise ConfigError(f"bad delete spec: {spec}")
 
 
+def cancel(data):
+    reset_wizard(data)
+    return render_modes(data)
+
+
+def handle_callback(data, cb):
+    if cb == "cb_back":
+        return render_modes(data)
+    if cb == "cb_newmode":
+        return start_new_mode(data)
+    if cb == "cb_createmode":
+        return create_mode(data)
+    if cb == "cb_cancel":
+        return cancel(data)
+    if ":" not in cb:
+        raise ConfigError(f"unknown callback: {cb}")
+    verb, arg = cb.split(":", 1)
+    if verb == "cb_setmode":
+        setmode(data, arg)
+        return render_topics(data, arg)
+    if verb == "cb_toggle":
+        toggle(data, arg)
+        return render_topics(data)
+    if verb == "cb_pickplat":
+        pick_platform(data, arg)
+        return render_platforms(data)
+    if verb == "cb_addtopic":
+        return start_add_topic(data, arg)
+    if verb == "cb_delmode":
+        return confirm_delete_mode(data, arg)
+    if verb == "cb_deltopic":
+        mode_id, topic_id = arg.split(":", 1)
+        return confirm_delete_topic(data, mode_id, topic_id)
+    if verb == "cb_confirmdel":
+        return perform_delete(data, arg)
+    raise ConfigError(f"unknown callback: {cb}")
+
+
 class ConfigError(Exception):
     """Raised for any unreadable/invalid config or unknown id."""
 

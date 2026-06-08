@@ -468,3 +468,37 @@ def test_perform_delete_topic_removes_only_target():
     topics = data["modes"]["global_news"]["topics"]
     assert "disasters" not in topics
     assert "market_meltdown" in topics  # sibling intact
+
+
+def test_handle_callback_routes_setmode():
+    data = _json.loads(FIXTURE.read_text())
+    out = engine.handle_callback(data, "cb_setmode:global_news")
+    assert data["current_active_mode"] == "global_news"
+    assert "🚨" in out["text"]
+
+
+def test_handle_callback_routes_toggle():
+    data = _json.loads(FIXTURE.read_text())
+    engine.handle_callback(data, "cb_toggle:viral_memes")
+    assert data["modes"]["culture_drama"]["topics"]["viral_memes"]["active"] is True
+
+
+def test_handle_callback_deltopic_parses_compound_arg():
+    data = _json.loads(FIXTURE.read_text())
+    out = engine.handle_callback(data, "cb_deltopic:global_news:disasters")
+    flat = [b for row in out["buttons"] for b in row]
+    assert any(b["callback_data"] == "cb_confirmdel:topic:global_news:disasters" for b in flat)
+
+
+def test_handle_callback_cancel_resets_to_modes():
+    data = _json.loads(FIXTURE.read_text())
+    engine.start_new_mode(data)
+    out = engine.handle_callback(data, "cb_cancel")
+    assert data["wizard"]["step"] == "idle"
+    assert out["buttons"][-1][0]["callback_data"] == "cb_newmode"
+
+
+def test_handle_callback_unknown_raises():
+    data = _json.loads(FIXTURE.read_text())
+    with pytest.raises(engine.ConfigError):
+        engine.handle_callback(data, "cb_bogus:1")
