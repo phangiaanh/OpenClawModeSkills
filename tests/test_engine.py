@@ -287,11 +287,10 @@ ACCOUNTS_FIXTURE = Path(__file__).parent / "fixtures" / "accounts.sample.json"
 
 def _patch_payload(monkeypatch):
     payload = _json.loads(ACCOUNTS_FIXTURE.read_text())
-    monkeypatch.setattr(engine, "_get_accounts_payload", lambda token: payload)
+    monkeypatch.setattr(engine, "_get_accounts_payload", lambda: payload)
 
 
 def test_fetch_accounts_filters_and_maps(monkeypatch):
-    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
     _patch_payload(monkeypatch)
     accounts = engine.fetch_accounts()
     assert len(accounts) == 2  # disabled one filtered out
@@ -299,16 +298,8 @@ def test_fetch_accounts_filters_and_maps(monkeypatch):
                            "platform": "threads", "handle": "wintermelonely"}
 
 
-def test_fetch_accounts_missing_token_raises(monkeypatch):
-    monkeypatch.delenv("ZERNIO_API_TOKEN", raising=False)
-    with pytest.raises(engine.ConfigError, match="ZERNIO_API_TOKEN"):
-        engine.fetch_accounts()
-
-
 def test_fetch_accounts_network_error_raises(monkeypatch):
-    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
-
-    def boom(token):
+    def boom():
         raise OSError("connection refused")
 
     monkeypatch.setattr(engine, "_get_accounts_payload", boom)
@@ -323,7 +314,6 @@ def _wizard_picking(name="My Mode"):
 
 def test_render_platforms_lists_accounts(monkeypatch):
     _patch_payload(monkeypatch)
-    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
     data = _wizard_picking()
     out = engine.render_platforms(data)
     flat = [b for row in out["buttons"] for b in row]
@@ -332,8 +322,10 @@ def test_render_platforms_lists_accounts(monkeypatch):
     assert flat[-1]["callback_data"] == "cb_cancel"
 
 
-def test_render_platforms_token_error_shows_warning(monkeypatch):
-    monkeypatch.delenv("ZERNIO_API_TOKEN", raising=False)
+def test_render_platforms_network_error_shows_warning(monkeypatch):
+    def boom():
+        raise OSError("unreachable")
+    monkeypatch.setattr(engine, "_get_accounts_payload", boom)
     data = _wizard_picking()
     out = engine.render_platforms(data)
     assert out["text"].startswith("⚠️")
@@ -342,7 +334,6 @@ def test_render_platforms_token_error_shows_warning(monkeypatch):
 
 def test_pick_platform_toggles_and_caps_at_two(monkeypatch):
     _patch_payload(monkeypatch)
-    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
     data = _wizard_picking()
     engine.render_platforms(data)  # caches accounts in wizard
     engine.pick_platform(data, "6a2239332b2567671ad7b555")
@@ -365,7 +356,6 @@ def test_start_new_mode_enters_await_name():
 
 def test_submit_name_advances_to_pick_platforms(monkeypatch):
     _patch_payload(monkeypatch)
-    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
     data = {"current_active_mode": "x", "modes": {}}
     engine.start_new_mode(data)
     out = engine.submit_name(data, "  Crypto Watch  ")
@@ -385,7 +375,6 @@ def test_submit_name_rejects_empty():
 
 def test_create_mode_persists_and_activates(monkeypatch):
     _patch_payload(monkeypatch)
-    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
     data = {"current_active_mode": "x", "modes": {}}
     engine.start_new_mode(data)
     engine.submit_name(data, "Crypto Watch")
@@ -402,7 +391,6 @@ def test_create_mode_persists_and_activates(monkeypatch):
 
 def test_create_mode_requires_at_least_one_platform(monkeypatch):
     _patch_payload(monkeypatch)
-    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
     data = {"current_active_mode": "x", "modes": {}}
     engine.start_new_mode(data)
     engine.submit_name(data, "Empty Mode")
@@ -511,7 +499,6 @@ def test_handle_text_idle_not_handled():
 
 def test_handle_text_await_name_handled(monkeypatch):
     _patch_payload(monkeypatch)
-    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
     data = _json.loads(FIXTURE.read_text())
     engine.start_new_mode(data)
     out = engine.handle_text(data, "Crypto Watch")

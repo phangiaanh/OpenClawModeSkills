@@ -83,5 +83,5 @@ If the engine exits non-zero, send `⚠️ <error>` as plain text.
 ## Notes
 
 - `modes.json` is the single source of truth; the engine writes a `.bak` before each save.
-- `ZERNIO_API_TOKEN` env var required for the platform picker.
+- The platform picker fetches accounts via the zernio MCP gateway (no env token required).
 - `EPAPHRAS_MODES_FILE` env var overrides the default `modes.json` location.

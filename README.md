@@ -13,8 +13,8 @@ Requires only Python 3 standard library — no pip or external packages needed.
 3. (Optional) Set `EPAPHRAS_MODES_FILE` to choose where `modes.json` lives.
    Default: alongside `engine.py`. The file is seeded from
    `templates/modes.default.json` on first use.
-4. Set `ZERNIO_API_TOKEN` in the gateway environment so the platform picker can
-   list the customer's attached accounts (`GET https://zernio.com/api/v1/accounts`).
+4. The platform picker calls the zernio MCP gateway (token embedded in the gateway URL);
+   no extra env vars required.
 
 ## Usage
 

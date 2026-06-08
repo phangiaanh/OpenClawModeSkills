@@ -1,4 +1,5 @@
 """Epaphras Modes engine: modes.json IO, mutation, and Telegram payload rendering."""
+import ast
 import json
 import os
 import re
@@ -53,27 +54,34 @@ def reset_wizard(data):
     return data
 
 
-ZERNIO_ACCOUNTS_URL = "https://zernio.com/api/v1/accounts"
+MCP_GATEWAY_URL = "https://gw-zernio-53461.agentbase-gateway.aiplatform.vngcloud.vn/zernio"
+_MCP_BODY = json.dumps({
+    "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+    "params": {"name": "accounts_list_accounts", "arguments": {}},
+}).encode()
 
 
-def _get_accounts_payload(token):
-    """Raw GET of the zernio accounts API. Split out so tests can monkeypatch it."""
+def _get_accounts_payload():
+    """POST to the zernio MCP gateway. Split out so tests can monkeypatch it."""
     req = urllib.request.Request(
-        ZERNIO_ACCOUNTS_URL, headers={"Authorization": f"Bearer {token}"})
+        MCP_GATEWAY_URL, data=_MCP_BODY,
+        headers={"Content-Type": "application/json",
+                 "Accept": "application/json, text/event-stream"},
+        method="POST",
+    )
     ctx = ssl.create_default_context()
     with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
-        return json.loads(resp.read())
+        envelope = json.loads(resp.read())
+    # Response text is Python repr (None/True/False), not JSON
+    return ast.literal_eval(envelope["result"]["content"][0]["text"])
 
 
-def fetch_accounts(token=None):
+def fetch_accounts():
     """Return usable accounts as [{accountId, platform, handle}]. Raises ConfigError
-    on missing token, network/HTTP failure, or invalid JSON."""
-    token = token or os.environ.get("ZERNIO_API_TOKEN")
-    if not token:
-        raise ConfigError("ZERNIO_API_TOKEN not set")
+    on network/HTTP failure or invalid response."""
     try:
-        payload = _get_accounts_payload(token)
-    except json.JSONDecodeError as e:
+        payload = _get_accounts_payload()
+    except (json.JSONDecodeError, KeyError, ValueError, SyntaxError) as e:
         raise ConfigError(f"accounts response invalid: {e}")
     except (urllib.error.URLError, OSError) as e:
         raise ConfigError(f"accounts fetch failed: {e}")
