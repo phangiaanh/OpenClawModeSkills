@@ -546,3 +546,16 @@ def test_cli_handle_callback_unknown_error_envelope(cfg):
     rc, out = run_cli(cfg, "handle-callback", "cb_bogus:1")
     assert rc == 1
     assert "error" in out
+
+
+def test_default_template_uses_object_platforms_and_idle_wizard():
+    import json as _j
+    tmpl = _j.loads((Path(__file__).parent.parent / "templates" / "modes.default.json").read_text())
+    assert tmpl["wizard"]["step"] == "idle"
+    for mode in tmpl["modes"].values():
+        for p in mode["platforms"]:
+            assert isinstance(p, dict) and "platform" in p
+    # object platforms still render via render_topics
+    first_id = next(iter(tmpl["modes"]))
+    out = engine.render_topics(tmpl, first_id)
+    assert "Platforms:" in out["text"]

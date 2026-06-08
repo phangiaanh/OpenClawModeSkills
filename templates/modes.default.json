@@ -1,10 +1,11 @@
 {
   "current_active_mode": "culture_drama",
+  "wizard": { "step": "idle" },
   "modes": {
     "deep_research": {
       "name": "Research & Deep Dive",
       "icon": "📚",
-      "platforms": ["LinkedIn", "Reddit"],
+      "platforms": [{ "platform": "linkedin" }, { "platform": "reddit" }],
       "topics": {
         "academic_papers": { "label": "Academic Papers", "active": true },
         "tech_forums": { "label": "Technical Forums", "active": false },
@@ -15,7 +16,7 @@
     "culture_drama": {
       "name": "Drama & Cultural Pulse",
       "icon": "🎭",
-      "platforms": ["TikTok", "Threads"],
+      "platforms": [{ "platform": "tiktok" }, { "platform": "threads" }],
       "topics": {
         "esports": { "label": "Esports Drama", "active": true },
         "vtuber_gossip": { "label": "Vtuber/Streamer Gossip", "active": true },
@@ -26,7 +27,7 @@
     "global_news": {
       "name": "Breaking News & Global Alert",
       "icon": "🚨",
-      "platforms": ["X", "Telegram"],
+      "platforms": [{ "platform": "x" }, { "platform": "threads" }],
       "topics": {
         "geopolitics": { "label": "Geopolitical Crises", "active": false },
         "market_meltdown": { "label": "Market Meltdowns", "active": true },
@@ -37,7 +38,7 @@
     "venture_intel": {
       "name": "Venture & Market Intelligence",
       "icon": "💼",
-      "platforms": ["LinkedIn", "Product Hunt"],
+      "platforms": [{ "platform": "linkedin" }, { "platform": "instagram" }],
       "topics": {
         "vc_funding": { "label": "VC Funding Drops", "active": false },
         "stealth_hires": { "label": "Stealth Engineering Waves", "active": false },
