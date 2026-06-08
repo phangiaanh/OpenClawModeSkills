@@ -3,9 +3,9 @@ import sys
 with open('/app/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js', 'r') as f:
     src = f.read()
 
-if '_parseGemmaNativeToolCall' in src and 'withBraces' in src:
-    print("Already fully patched (v3)")
-    sys.exit(0)
+_patch1_done = '_parseGemmaNativeToolCall' in src and 'withBraces' in src
+if _patch1_done:
+    print("openai-completions.js already patched (v3) — skipping")
 
 # Strip any older partial patches first
 if 'sanitizeMessageButtons' in src and '_parseGemmaNativeToolCall' not in src:
@@ -168,7 +168,7 @@ if len(_matches) > 1:
     print(f"WARNING: multiple matches {_matches}, using first")
 EMBEDDED = _matches[0]
 print(f"pi-embedded bundle: {EMBEDDED}")
-ENGINE_PATH = '/app/skills/openclaw-mode-skills/engine.py'
+ENGINE_PATH = '/root/.openclaw/workspace/skills/OpenClawModeSkills/engine.py'
 EMBED_MARKER = '_EPAPHRAS_ESM_V4'
 
 with open(EMBEDDED, 'r') as f:
