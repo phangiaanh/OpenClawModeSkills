@@ -526,3 +526,23 @@ def test_handle_text_slash_command_cancels_and_passes_through():
     out = engine.handle_text(data, "/epaphras")
     assert out == {"handled": False}
     assert data["wizard"]["step"] == "idle"  # wizard reset
+
+
+def test_cli_handle_callback_newmode_persists(cfg):
+    rc, out = run_cli(cfg, "handle-callback", "cb_newmode")
+    assert rc == 0
+    assert engine.load_config(cfg)["wizard"]["step"] == "await_name"
+
+
+def test_cli_handle_text_idle_not_handled_no_write(cfg):
+    before = cfg.read_text()
+    rc, out = run_cli(cfg, "handle-text", "random chatter")
+    assert rc == 0
+    assert out == {"handled": False}
+    assert cfg.read_text() == before  # idle => no save
+
+
+def test_cli_handle_callback_unknown_error_envelope(cfg):
+    rc, out = run_cli(cfg, "handle-callback", "cb_bogus:1")
+    assert rc == 1
+    assert "error" in out

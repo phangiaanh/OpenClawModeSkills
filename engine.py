@@ -428,7 +428,8 @@ def main(argv=None):
     parser.add_argument(
         "command",
         choices=["render-modes", "render-topics", "setmode", "toggle", "init",
-                 "store-msgid", "get-msgid"],
+                 "store-msgid", "get-msgid",
+                 "handle-callback", "handle-text", "render-platforms"],
     )
     parser.add_argument("arg", nargs="?", help="mode_id or topic_id")
     parser.add_argument("--file", help="path to modes.yaml")
@@ -475,6 +476,24 @@ def main(argv=None):
             _emit({"ok": True, "message_id": data["panel_message_id"]})
         elif args.command == "get-msgid":
             _emit(get_panel_msgid(data))
+        elif args.command == "handle-callback":
+            if not args.arg:
+                _emit({"error": "handle-callback requires a callback_data argument"})
+                return 1
+            out = handle_callback(data, args.arg)
+            save_config(path, data)
+            _emit(out)
+        elif args.command == "handle-text":
+            text = args.arg or ""
+            step = data.get("wizard", {}).get("step", "idle")
+            out = handle_text(data, text)
+            if step != "idle":
+                save_config(path, data)
+            _emit(out)
+        elif args.command == "render-platforms":
+            out = render_platforms(data)
+            save_config(path, data)  # persist cached account snapshot
+            _emit(out)
         return 0
     except ConfigError as e:
         _emit({"error": str(e)})
