@@ -276,6 +276,24 @@ def handle_callback(data, cb):
     raise ConfigError(f"unknown callback: {cb}")
 
 
+def handle_text(data, text):
+    wiz = get_wizard(data)
+    step = wiz.get("step", "idle")
+    if step == "idle":
+        return {"handled": False}
+    if text.strip().startswith("/"):
+        reset_wizard(data)
+        return {"handled": False}
+    if step == "await_name":
+        screen = submit_name(data, text)
+    elif step == "await_topic":
+        screen = submit_topic(data, text)
+    else:
+        return {"handled": False}  # e.g. pick_platforms: ignore stray text
+    return {"handled": True, "text": screen["text"],
+            "buttons": screen["buttons"], "inline_keyboard": screen["inline_keyboard"]}
+
+
 class ConfigError(Exception):
     """Raised for any unreadable/invalid config or unknown id."""
 

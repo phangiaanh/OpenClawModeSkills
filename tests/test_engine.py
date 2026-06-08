@@ -502,3 +502,27 @@ def test_handle_callback_unknown_raises():
     data = _json.loads(FIXTURE.read_text())
     with pytest.raises(engine.ConfigError):
         engine.handle_callback(data, "cb_bogus:1")
+
+
+def test_handle_text_idle_not_handled():
+    data = _json.loads(FIXTURE.read_text())
+    assert engine.handle_text(data, "hello") == {"handled": False}
+
+
+def test_handle_text_await_name_handled(monkeypatch):
+    _patch_payload(monkeypatch)
+    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
+    data = _json.loads(FIXTURE.read_text())
+    engine.start_new_mode(data)
+    out = engine.handle_text(data, "Crypto Watch")
+    assert out["handled"] is True
+    assert data["wizard"]["step"] == "pick_platforms"
+    assert "buttons" in out and "inline_keyboard" in out
+
+
+def test_handle_text_slash_command_cancels_and_passes_through():
+    data = _json.loads(FIXTURE.read_text())
+    engine.start_new_mode(data)
+    out = engine.handle_text(data, "/epaphras")
+    assert out == {"handled": False}
+    assert data["wizard"]["step"] == "idle"  # wizard reset
