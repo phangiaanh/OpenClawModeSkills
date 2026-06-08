@@ -3,7 +3,10 @@ import json
 import os
 import re
 import shutil
+import ssl
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 DEFAULT_TEMPLATE = Path(__file__).parent / "templates" / "modes.default.json"
@@ -48,6 +51,40 @@ def get_wizard(data):
 def reset_wizard(data):
     data["wizard"] = {"step": "idle"}
     return data
+
+
+ZERNIO_ACCOUNTS_URL = "https://zernio.com/api/v1/accounts"
+
+
+def _get_accounts_payload(token):
+    """Raw GET of the zernio accounts API. Split out so tests can monkeypatch it."""
+    req = urllib.request.Request(
+        ZERNIO_ACCOUNTS_URL, headers={"Authorization": f"Bearer {token}"})
+    ctx = ssl.create_default_context()
+    with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+        return json.loads(resp.read())
+
+
+def fetch_accounts(token=None):
+    """Return usable accounts as [{accountId, platform, handle}]. Raises ConfigError
+    on missing token, network/HTTP failure, or invalid JSON."""
+    token = token or os.environ.get("ZERNIO_API_TOKEN")
+    if not token:
+        raise ConfigError("ZERNIO_API_TOKEN not set")
+    try:
+        payload = _get_accounts_payload(token)
+    except json.JSONDecodeError as e:
+        raise ConfigError(f"accounts response invalid: {e}")
+    except (urllib.error.URLError, OSError) as e:
+        raise ConfigError(f"accounts fetch failed: {e}")
+    out = []
+    for a in payload.get("accounts", []):
+        if not (a.get("enabled") and a.get("isActive") and a.get("platformStatus") == "active"):
+            continue
+        out.append({"accountId": a.get("_id"),
+                    "platform": a.get("platform"),
+                    "handle": a.get("username")})
+    return out
 
 
 class ConfigError(Exception):

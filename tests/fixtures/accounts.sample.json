@@ -1,0 +1,11 @@
+{
+  "accounts": [
+    {"_id": "6a2239332b2567671ad7b555", "platform": "threads",
+     "username": "wintermelonely", "enabled": true, "isActive": true, "platformStatus": "active"},
+    {"_id": "6a224a452b2567671ad96724", "platform": "tiktok",
+     "username": "phan.gia.anh7", "enabled": true, "isActive": true, "platformStatus": "active"},
+    {"_id": "deadbeef", "platform": "x",
+     "username": "disabled_one", "enabled": false, "isActive": true, "platformStatus": "active"}
+  ],
+  "hasAnalyticsAccess": true
+}

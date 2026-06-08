@@ -278,3 +278,39 @@ def test_reset_wizard_clears_state():
     data = {"modes": {}, "wizard": {"step": "await_name", "draft": {"name": "x"}}}
     engine.reset_wizard(data)
     assert data["wizard"] == {"step": "idle"}
+
+
+import json as _json
+
+ACCOUNTS_FIXTURE = Path(__file__).parent / "fixtures" / "accounts.sample.json"
+
+
+def _patch_payload(monkeypatch):
+    payload = _json.loads(ACCOUNTS_FIXTURE.read_text())
+    monkeypatch.setattr(engine, "_get_accounts_payload", lambda token: payload)
+
+
+def test_fetch_accounts_filters_and_maps(monkeypatch):
+    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
+    _patch_payload(monkeypatch)
+    accounts = engine.fetch_accounts()
+    assert len(accounts) == 2  # disabled one filtered out
+    assert accounts[0] == {"accountId": "6a2239332b2567671ad7b555",
+                           "platform": "threads", "handle": "wintermelonely"}
+
+
+def test_fetch_accounts_missing_token_raises(monkeypatch):
+    monkeypatch.delenv("ZERNIO_API_TOKEN", raising=False)
+    with pytest.raises(engine.ConfigError, match="ZERNIO_API_TOKEN"):
+        engine.fetch_accounts()
+
+
+def test_fetch_accounts_network_error_raises(monkeypatch):
+    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
+
+    def boom(token):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(engine, "_get_accounts_payload", boom)
+    with pytest.raises(engine.ConfigError, match="accounts fetch failed"):
+        engine.fetch_accounts()
