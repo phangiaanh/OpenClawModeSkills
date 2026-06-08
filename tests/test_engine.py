@@ -253,3 +253,15 @@ def test_gen_id_unique_suffix():
     existing = {"news", "news_2"}
     assert engine.gen_id(existing, "news") == "news_3"
     assert engine.gen_id(existing, "tech") == "tech"
+
+
+def test_get_wizard_defaults_to_idle():
+    data = {"modes": {}}
+    assert engine.get_wizard(data)["step"] == "idle"
+    assert data["wizard"]["step"] == "idle"  # written through
+
+
+def test_reset_wizard_clears_state():
+    data = {"modes": {}, "wizard": {"step": "await_name", "draft": {"name": "x"}}}
+    engine.reset_wizard(data)
+    assert data["wizard"] == {"step": "idle"}

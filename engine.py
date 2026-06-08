@@ -41,6 +41,15 @@ def gen_id(existing, base):
     return f"{base}_{n}"
 
 
+def get_wizard(data):
+    return data.setdefault("wizard", {"step": "idle"})
+
+
+def reset_wizard(data):
+    data["wizard"] = {"step": "idle"}
+    return data
+
+
 class ConfigError(Exception):
     """Raised for any unreadable/invalid config or unknown id."""
 
