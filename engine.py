@@ -66,7 +66,8 @@ def _get_accounts_payload():
     req = urllib.request.Request(
         MCP_GATEWAY_URL, data=_MCP_BODY,
         headers={"Content-Type": "application/json",
-                 "Accept": "application/json, text/event-stream"},
+                 "Accept": "application/json, text/event-stream",
+                 "User-Agent": "curl/8.0.0"},
         method="POST",
     )
     ctx = ssl.create_default_context()
