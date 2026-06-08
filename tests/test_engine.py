@@ -19,6 +19,10 @@ def cfg(tmp_path):
     return dst
 
 
+def cfg_path():
+    return FIXTURE
+
+
 def test_resolve_path_prefers_arg(tmp_path):
     p = tmp_path / "x.yaml"
     assert engine.resolve_path(str(p)) == p
@@ -80,17 +84,22 @@ def test_ensure_file_raises_config_error_when_template_missing(tmp_path):
         engine.ensure_file(target, template=str(missing_template))
 
 
-def test_render_modes_marks_active(cfg):
-    data = engine.load_config(cfg)
+def test_render_modes_marks_active():
+    data = engine.load_config(cfg_path())
     out = engine.render_modes(data)
     assert "buttons" in out and "text" in out and "inline_keyboard" in out
     rows = out["buttons"]
-    assert len(rows) == 4
+    # 4 mode rows + 1 "New mode" row
+    assert len(rows) == 5
     flat = [b for row in rows for b in row]
     active = next(b for b in flat if b["callback_data"] == "cb_setmode:culture_drama")
     assert "▶️" in active["text"]
     inactive = next(b for b in flat if b["callback_data"] == "cb_setmode:deep_research")
     assert "▶️" not in inactive["text"]
+    # every mode row has a delete button
+    assert any(b["callback_data"] == "cb_delmode:culture_drama" for b in flat)
+    # new-mode affordance present
+    assert rows[-1][0]["callback_data"] == "cb_newmode"
     assert out["inline_keyboard"] == out["buttons"]
 
 
@@ -161,7 +170,7 @@ def run_cli(cfg, *args):
 def test_cli_render_modes(cfg):
     rc, out = run_cli(cfg, "render-modes")
     assert rc == 0
-    assert len(out["buttons"]) == 4
+    assert len(out["buttons"]) == 5
 
 
 def test_cli_setmode_persists_and_returns_topics(cfg):

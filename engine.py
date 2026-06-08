@@ -101,12 +101,16 @@ def render_modes(data):
     active = data.get("current_active_mode")
     rows = []
     for mode_id, mode in data["modes"].items():
-        label = f"{mode['icon']} {mode['name']}"
+        label = f"{mode.get('icon', DEFAULT_ICON)} {mode['name']}"
         if mode_id == active:
             label += " ▶️"
-        rows.append([{"text": label, "callback_data": f"cb_setmode:{mode_id}"}])
-    # Both field names emitted: "buttons" (pre-2026.4) and "inline_keyboard" (Telegram-native, 2026.4+)
-    return {"text": "Epaphras — Listening Config\nPick a mode:", "buttons": rows, "inline_keyboard": rows}
+        rows.append([
+            {"text": label, "callback_data": f"cb_setmode:{mode_id}"},
+            {"text": "🗑", "callback_data": f"cb_delmode:{mode_id}"},
+        ])
+    rows.append([{"text": "➕ New mode", "callback_data": "cb_newmode"}])
+    return {"text": "Epaphras — Listening Config\nPick a mode:",
+            "buttons": rows, "inline_keyboard": rows}
 
 
 def render_topics(data, mode_id=None):
