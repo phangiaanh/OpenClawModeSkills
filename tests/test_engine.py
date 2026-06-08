@@ -442,3 +442,29 @@ def test_submit_topic_rejects_empty():
     out = engine.submit_topic(data, "   ")
     assert out["text"].startswith("⚠️")
     assert data["wizard"]["step"] == "await_topic"  # stays
+
+
+def test_confirm_delete_mode_offers_yes_no():
+    data = _json.loads(FIXTURE.read_text())
+    out = engine.confirm_delete_mode(data, "global_news")
+    flat = [b for row in out["buttons"] for b in row]
+    assert any(b["callback_data"] == "cb_confirmdel:mode:global_news" for b in flat)
+    assert any(b["callback_data"] == "cb_cancel" for b in flat)
+    # nothing deleted yet
+    assert "global_news" in data["modes"]
+
+
+def test_perform_delete_mode_removes_and_reassigns_active():
+    data = _json.loads(FIXTURE.read_text())  # active = culture_drama
+    out = engine.perform_delete(data, "mode:culture_drama")
+    assert "culture_drama" not in data["modes"]
+    assert data["current_active_mode"] in data["modes"]
+    assert out["buttons"][-1][0]["callback_data"] == "cb_newmode"  # Screen 1
+
+
+def test_perform_delete_topic_removes_only_target():
+    data = _json.loads(FIXTURE.read_text())
+    engine.perform_delete(data, "topic:global_news:disasters")
+    topics = data["modes"]["global_news"]["topics"]
+    assert "disasters" not in topics
+    assert "market_meltdown" in topics  # sibling intact

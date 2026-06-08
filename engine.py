@@ -199,6 +199,45 @@ def submit_topic(data, text):
     return render_topics(data, mode_id)
 
 
+def confirm_delete_mode(data, mode_id):
+    if mode_id not in data["modes"]:
+        raise ConfigError(f"unknown mode: {mode_id}")
+    name = data["modes"][mode_id]["name"]
+    rows = [[
+        {"text": "✅ Yes, delete", "callback_data": f"cb_confirmdel:mode:{mode_id}"},
+        {"text": "✖ No", "callback_data": "cb_cancel"},
+    ]]
+    return {"text": f"Delete mode \"{name}\"?", "buttons": rows, "inline_keyboard": rows}
+
+
+def confirm_delete_topic(data, mode_id, topic_id):
+    if mode_id not in data["modes"] or topic_id not in data["modes"][mode_id]["topics"]:
+        raise ConfigError("unknown topic")
+    label = data["modes"][mode_id]["topics"][topic_id]["label"]
+    rows = [[
+        {"text": "✅ Yes, delete", "callback_data": f"cb_confirmdel:topic:{mode_id}:{topic_id}"},
+        {"text": "✖ No", "callback_data": "cb_cancel"},
+    ]]
+    return {"text": f"Delete topic \"{label}\"?", "buttons": rows, "inline_keyboard": rows}
+
+
+def perform_delete(data, spec):
+    parts = spec.split(":")
+    if parts[0] == "mode" and len(parts) == 2:
+        mode_id = parts[1]
+        data["modes"].pop(mode_id, None)
+        if data.get("current_active_mode") == mode_id:
+            data["current_active_mode"] = next(iter(data["modes"]), None)
+        return render_modes(data)
+    if parts[0] == "topic" and len(parts) == 3:
+        mode_id, topic_id = parts[1], parts[2]
+        if mode_id in data["modes"]:
+            data["modes"][mode_id]["topics"].pop(topic_id, None)
+            return render_topics(data, mode_id)
+        return render_modes(data)
+    raise ConfigError(f"bad delete spec: {spec}")
+
+
 class ConfigError(Exception):
     """Raised for any unreadable/invalid config or unknown id."""
 
