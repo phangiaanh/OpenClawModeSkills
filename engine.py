@@ -136,6 +136,41 @@ def pick_platform(data, account_id):
     plats.append(match)
 
 
+def start_new_mode(data):
+    data["wizard"] = {"step": "await_name", "draft": {"name": "", "platforms": []}}
+    rows = [[{"text": "✖ Cancel", "callback_data": "cb_cancel"}]]
+    return {"text": "Send a name for the new mode:", "buttons": rows, "inline_keyboard": rows}
+
+
+def submit_name(data, text):
+    wiz = get_wizard(data)
+    name = text.strip()
+    if not (1 <= len(name) <= 40):
+        rows = [[{"text": "✖ Cancel", "callback_data": "cb_cancel"}]]
+        return {"text": "⚠️ Name must be 1–40 characters.\nSend a name for the new mode:",
+                "buttons": rows, "inline_keyboard": rows}
+    wiz["draft"] = {"name": name, "platforms": []}
+    wiz.pop("accounts", None)  # force a fresh fetch for this mode
+    wiz["step"] = "pick_platforms"
+    return render_platforms(data)
+
+
+def create_mode(data):
+    wiz = get_wizard(data)
+    draft = wiz.get("draft", {})
+    plats = draft.get("platforms", [])
+    if not (1 <= len(plats) <= 2):
+        return render_platforms(data)  # not ready; stay on picker
+    mode_id = gen_id(set(data["modes"].keys()), _slugify(draft["name"]))
+    data["modes"][mode_id] = {
+        "name": draft["name"], "icon": DEFAULT_ICON,
+        "platforms": plats, "topics": {},
+    }
+    data["current_active_mode"] = mode_id
+    reset_wizard(data)
+    return render_topics(data, mode_id)
+
+
 class ConfigError(Exception):
     """Raised for any unreadable/invalid config or unknown id."""
 

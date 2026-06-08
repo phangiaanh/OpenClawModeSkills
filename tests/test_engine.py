@@ -354,3 +354,58 @@ def test_pick_platform_toggles_and_caps_at_two(monkeypatch):
     engine.pick_platform(data, "6a2239332b2567671ad7b555")
     assert {p["accountId"] for p in data["wizard"]["draft"]["platforms"]} == {
         "6a224a452b2567671ad96724"}
+
+
+def test_start_new_mode_enters_await_name():
+    data = {"current_active_mode": "x", "modes": {}}
+    out = engine.start_new_mode(data)
+    assert data["wizard"]["step"] == "await_name"
+    assert out["buttons"][-1][0]["callback_data"] == "cb_cancel"
+
+
+def test_submit_name_advances_to_pick_platforms(monkeypatch):
+    _patch_payload(monkeypatch)
+    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
+    data = {"current_active_mode": "x", "modes": {}}
+    engine.start_new_mode(data)
+    out = engine.submit_name(data, "  Crypto Watch  ")
+    assert data["wizard"]["step"] == "pick_platforms"
+    assert data["wizard"]["draft"]["name"] == "Crypto Watch"
+    assert any(b["callback_data"] == "cb_createmode"
+               for row in out["buttons"] for b in row)
+
+
+def test_submit_name_rejects_empty():
+    data = {"current_active_mode": "x", "modes": {}}
+    engine.start_new_mode(data)
+    out = engine.submit_name(data, "   ")
+    assert out["text"].startswith("⚠️")
+    assert data["wizard"]["step"] == "await_name"  # stays
+
+
+def test_create_mode_persists_and_activates(monkeypatch):
+    _patch_payload(monkeypatch)
+    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
+    data = {"current_active_mode": "x", "modes": {}}
+    engine.start_new_mode(data)
+    engine.submit_name(data, "Crypto Watch")
+    engine.pick_platform(data, "6a224a452b2567671ad96724")
+    out = engine.create_mode(data)
+    assert data["wizard"]["step"] == "idle"
+    new_id = data["current_active_mode"]
+    assert new_id == "crypto_watch"
+    assert data["modes"][new_id]["icon"] == "🎯"
+    assert data["modes"][new_id]["topics"] == {}
+    assert len(data["modes"][new_id]["platforms"]) == 1
+    assert "Crypto Watch" in out["text"]
+
+
+def test_create_mode_requires_at_least_one_platform(monkeypatch):
+    _patch_payload(monkeypatch)
+    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
+    data = {"current_active_mode": "x", "modes": {}}
+    engine.start_new_mode(data)
+    engine.submit_name(data, "Empty Mode")
+    out = engine.create_mode(data)  # no platforms picked
+    assert data["wizard"]["step"] == "pick_platforms"  # stays
+    assert "Empty Mode" not in [m.get("name") for m in data["modes"].values()]
