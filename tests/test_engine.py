@@ -225,3 +225,16 @@ def test_cli_render_topics_with_positional_arg_returns_error(cfg):
     assert rc == 1
     assert "error" in out
     assert "--mode" in out["error"]
+
+
+def test_platform_label_object_with_handle():
+    entry = {"accountId": "abc", "platform": "threads", "handle": "wintermelonely"}
+    assert engine.platform_label(entry) == "🧵 threads · @wintermelonely"
+
+
+def test_platform_label_object_unknown_platform_uses_globe():
+    assert engine.platform_label({"platform": "mastodon"}) == "🌐 mastodon"
+
+
+def test_platform_label_legacy_string_passthrough():
+    assert engine.platform_label("LinkedIn") == "LinkedIn"

@@ -9,6 +9,22 @@ DEFAULT_TEMPLATE = Path(__file__).parent / "templates" / "modes.default.json"
 DEFAULT_FILE = Path(__file__).parent / "modes.json"
 
 
+PLATFORM_EMOJI = {
+    "threads": "🧵", "tiktok": "🎵", "x": "✖️", "twitter": "✖️",
+    "instagram": "📸", "youtube": "▶️", "linkedin": "💼", "facebook": "📘",
+}
+DEFAULT_ICON = "🎯"
+
+
+def platform_label(entry):
+    if isinstance(entry, str):
+        return entry
+    platform = entry.get("platform", "?")
+    emoji = PLATFORM_EMOJI.get(platform, "🌐")
+    handle = entry.get("handle")
+    return f"{emoji} {platform} · @{handle}" if handle else f"{emoji} {platform}"
+
+
 class ConfigError(Exception):
     """Raised for any unreadable/invalid config or unknown id."""
 
