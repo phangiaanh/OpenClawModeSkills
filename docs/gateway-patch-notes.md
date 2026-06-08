@@ -173,28 +173,67 @@ function _parseGemmaNativeToolCall(text) {
 
 ---
 
+---
+
+## Fast Callback Handler (patch to `pi-embedded-CbMH3G07.js`)
+
+### Problem
+
+Button interactions were slow (3–5 s) because every `cb_*` callback went through the full LLM round-trip:
+
+```
+Telegram → callback_query → LLM agent → store-msgid → get-msgid → editMessageText
+```
+
+### Solution
+
+Register `cb_setmode`, `cb_toggle`, and `cb_back` as **plugin interactive handler** namespaces inside the gateway process. OpenClaw checks `dispatchPluginInteractiveHandler` **before** routing to the LLM agent. If the handler returns `{ handled: true }`, the LLM path is skipped entirely.
+
+The patched IIFE in `pi-embedded-CbMH3G07.js` is injected right before `bot.on("callback_query"`:
+
+```js
+(function _registerEpaphrasModesCallbacks() {
+    // calls registerPluginInteractiveHandler for cb_setmode / cb_toggle / cb_back
+    // handler: runs engine.py → calls respond.editMessage({ text, buttons })
+    // returns { handled: true } → LLM path bypassed
+})();
+```
+
+New flow (< 200 ms):
+
+```
+Telegram → callback_query → answerCallbackQuery → dispatchPluginInteractiveHandler
+    → _modesHandler → python3 engine.py → editMessageText (via respond.editMessage)
+```
+
+The sidecar (`callback_sidecar.py`) is **no longer needed** — it was made obsolete by this in-process approach.
+
+---
+
 ## Re-applying After Pod Restart
 
 Patches are applied to the container writable layer and are lost on pod restart.
 
+`full_patch_v2.py` now patches **both** files in one run.
+
 ```bash
-# Copy patch script
-kubectl --kubeconfig ~/Documents/kubeconfig_prod.yaml \
-  -n agent-core-53461 \
-  cp /tmp/full_patch_v2.py \
-  <pod>:/tmp/full_patch_v2.py -c gateway
+POD=<current-pod-name>
+KC="kubectl --kubeconfig ~/Documents/kubeconfig_prod.yaml -n agent-core-53461"
 
-# Apply
-kubectl --kubeconfig ~/Documents/kubeconfig_prod.yaml \
-  -n agent-core-53461 \
-  exec <pod> -c gateway -- python3 /tmp/full_patch_v2.py
+# 1. Copy master patch script
+$KC cp /tmp/full_patch_v2.py $POD:/tmp/full_patch_v2.py -c gateway
 
-# Restart gateway subprocess
-kubectl --kubeconfig ~/Documents/kubeconfig_prod.yaml \
-  -n agent-core-53461 \
-  exec <pod> -c gateway \
-  -- sh -c "kill \$(pgrep -f 'openclaw gateway') 2>/dev/null; sleep 1; \
-            nohup openclaw gateway --allow-unconfigured > /tmp/openclaw-restart.log 2>&1 &"
+# 2. Apply (idempotent — safe to re-run)
+$KC exec $POD -c gateway -- python3 /tmp/full_patch_v2.py
+
+# 3. Restart gateway subprocess
+$KC exec $POD -c gateway -- \
+  sh -c 'kill $(pgrep -f "openclaw gateway") 2>/dev/null; sleep 1; \
+         nohup openclaw gateway --allow-unconfigured > /tmp/gw-restart.log 2>&1 < /dev/null &'
 ```
 
-Replace `<pod>` with the current gateway pod name.
+`full_patch_v2.py` applies:
+1. `openai-completions.js` — Gemma native format interception (v3)
+2. `pi-embedded-CbMH3G07.js` — Epaphras Modes fast callback handler
+
+Replace `<current-pod-name>` with the live pod name from `kubectl get pods`.

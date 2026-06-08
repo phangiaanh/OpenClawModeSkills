@@ -86,6 +86,19 @@ def render_topics(data, mode_id=None):
     return {"text": text, "buttons": rows, "inline_keyboard": rows}
 
 
+def store_panel_msgid(data, msgid):
+    try:
+        data["panel_message_id"] = int(msgid)
+    except (ValueError, TypeError):
+        raise ConfigError(f"invalid message id: {msgid!r}")
+    return data
+
+
+def get_panel_msgid(data):
+    mid = data.get("panel_message_id")
+    return {"message_id": mid}
+
+
 def setmode(data, mode_id):
     if mode_id not in data["modes"]:
         raise ConfigError(f"unknown mode: {mode_id}")
@@ -95,12 +108,20 @@ def setmode(data, mode_id):
 
 def toggle(data, topic_id):
     mode_id = data.get("current_active_mode")
-    if not mode_id or mode_id not in data["modes"]:
-        raise ConfigError(f"no valid active mode set (got: {mode_id!r})")
-    topics = data["modes"][mode_id]["topics"]
-    if topic_id not in topics:
-        raise ConfigError(f"unknown topic: {topic_id} in mode {mode_id}")
-    topics[topic_id]["active"] = not bool(topics[topic_id]["active"])
+    # Try current active mode first, then search all modes for the topic
+    if mode_id and mode_id in data["modes"] and topic_id in data["modes"][mode_id]["topics"]:
+        target_mode_id = mode_id
+    else:
+        target_mode_id = next(
+            (mid for mid, m in data["modes"].items() if topic_id in m.get("topics", {})),
+            None,
+        )
+        if target_mode_id is None:
+            raise ConfigError(f"unknown topic: {topic_id}")
+        data["current_active_mode"] = target_mode_id
+    data["modes"][target_mode_id]["topics"][topic_id]["active"] = not bool(
+        data["modes"][target_mode_id]["topics"][topic_id]["active"]
+    )
     return data
 
 
@@ -114,7 +135,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Epaphras Modes engine")
     parser.add_argument(
         "command",
-        choices=["render-modes", "render-topics", "setmode", "toggle", "init"],
+        choices=["render-modes", "render-topics", "setmode", "toggle", "init",
+                 "store-msgid", "get-msgid"],
     )
     parser.add_argument("arg", nargs="?", help="mode_id or topic_id")
     parser.add_argument("--file", help="path to modes.yaml")
@@ -152,6 +174,15 @@ def main(argv=None):
             toggle(data, args.arg)
             save_config(path, data)
             _emit(render_topics(data))
+        elif args.command == "store-msgid":
+            if not args.arg:
+                _emit({"error": "store-msgid requires a message_id argument"})
+                return 1
+            store_panel_msgid(data, args.arg)
+            save_config(path, data)
+            _emit({"ok": True, "message_id": data["panel_message_id"]})
+        elif args.command == "get-msgid":
+            _emit(get_panel_msgid(data))
         return 0
     except ConfigError as e:
         _emit({"error": str(e)})
