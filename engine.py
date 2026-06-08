@@ -71,7 +71,17 @@ def _get_accounts_payload():
     )
     ctx = ssl.create_default_context()
     with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
-        envelope = json.loads(resp.read())
+        raw = resp.read().decode()
+    # Gateway returns SSE: "event: message\ndata: {...}\n\n"
+    # Find the data: line and parse it as JSON.
+    envelope = None
+    for line in raw.splitlines():
+        if line.startswith("data: "):
+            envelope = json.loads(line[6:])
+            break
+    if envelope is None:
+        # Fallback: try parsing the whole body as JSON (non-SSE error responses)
+        envelope = json.loads(raw)
     # Response text is Python repr (None/True/False), not JSON
     return ast.literal_eval(envelope["result"]["content"][0]["text"])
 
