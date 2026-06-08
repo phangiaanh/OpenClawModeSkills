@@ -238,3 +238,18 @@ def test_platform_label_object_unknown_platform_uses_globe():
 
 def test_platform_label_legacy_string_passthrough():
     assert engine.platform_label("LinkedIn") == "LinkedIn"
+
+
+def test_slugify_basic():
+    assert engine._slugify("My Cool Mode!") == "my_cool_mode"
+
+
+def test_slugify_caps_length_and_fallback():
+    assert len(engine._slugify("x" * 50)) <= 18
+    assert engine._slugify("!!!") == "mode"
+
+
+def test_gen_id_unique_suffix():
+    existing = {"news", "news_2"}
+    assert engine.gen_id(existing, "news") == "news_3"
+    assert engine.gen_id(existing, "tech") == "tech"

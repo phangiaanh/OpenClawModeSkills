@@ -1,6 +1,7 @@
 """Epaphras Modes engine: modes.json IO, mutation, and Telegram payload rendering."""
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -23,6 +24,21 @@ def platform_label(entry):
     emoji = PLATFORM_EMOJI.get(platform, "🌐")
     handle = entry.get("handle")
     return f"{emoji} {platform} · @{handle}" if handle else f"{emoji} {platform}"
+
+
+def _slugify(name):
+    slug = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
+    return slug[:18] or "mode"
+
+
+def gen_id(existing, base):
+    """Return base, or base_2, base_3 … not present in `existing`."""
+    if base not in existing:
+        return base
+    n = 2
+    while f"{base}_{n}" in existing:
+        n += 1
+    return f"{base}_{n}"
 
 
 class ConfigError(Exception):
