@@ -155,10 +155,15 @@ with open('/app/node_modules/@mariozechner/pi-ai/dist/providers/openai-completio
     f.write(src)
 print("All patches applied (v3)")
 
-# ─── Patch 2: pi-embedded-CbMH3G07.js — ESM_V3 fast callback intercept ─────────
-# Injected BEFORE shouldSkipUpdate inside bot.on("callback_query").
-# Uses await import("child_process") — required because pi-embedded is an ESM module.
-# require() is NOT available in ESM and would silently throw → fall through to LLM.
+# ─── Patch 2 + 3: pi-embedded-CbMH3G07.js — bot.use() middleware (V5) ───────────
+# Inject a bot.use(async (ctx, next) => {...}) with TWO parameters BEFORE
+# registerTelegramHandlers() is called. The 2-param signature gives us full
+# control of next() — we never call next() for cb_* or wizard text we handle,
+# so the LLM is bypassed entirely.
+#
+# Why not inside bot.on("callback_query", async (ctx) => {...}):
+#   grammY treats 1-param handlers as "leaf" middleware and auto-calls next()
+#   after the function resolves, even if we return early. The LLM fires anyway.
 
 import glob as _glob
 _matches = _glob.glob('/app/dist/pi-embedded-*.js')
@@ -169,19 +174,22 @@ if len(_matches) > 1:
 EMBEDDED = _matches[0]
 print(f"pi-embedded bundle: {EMBEDDED}")
 ENGINE_PATH = '/root/.openclaw/workspace/skills/OpenClawModeSkills/engine.py'
-EMBED_MARKER = '_EPAPHRAS_ESM_V4'
+MODES_PATH = ENGINE_PATH.replace("engine.py", "modes.json")
+MW_MARKER = '_EPAPHRAS_MW_V5'
 
 with open(EMBEDDED, 'r') as f:
     esrc = f.read()
 
-# Remove old broken patches if present
-for _old_marker in ('_EPAPHRAS_FAST_CB_V2', '_registerEpaphrasModesCallbacks', '_EPAPHRAS_ESM_V3'):
+# Remove ALL old Epaphras patches so we start clean
+for _old_marker in (
+    '_EPAPHRAS_FAST_CB_V2', '_registerEpaphrasModesCallbacks',
+    '_EPAPHRAS_ESM_V3', '_EPAPHRAS_ESM_V4', '_EPAPHRAS_TEXT_V1',
+):
     if _old_marker in esrc:
         start_tag = f'// PATCH: {_old_marker}'
         end_tag = f'// END PATCH: {_old_marker}'
         si = esrc.find(start_tag)
         if si >= 0:
-            # Walk back to nearest newline
             si = esrc.rfind('\n', 0, si) + 1
             ei = esrc.find(end_tag, si)
             if ei >= 0:
@@ -191,92 +199,65 @@ for _old_marker in ('_EPAPHRAS_FAST_CB_V2', '_registerEpaphrasModesCallbacks', '
                 esrc = esrc[:si] + esrc[ei:]
                 print(f"Removed old patch: {_old_marker}")
 
-if EMBED_MARKER in esrc:
-    print(f"pi-embedded already patched ({EMBED_MARKER}) — skipping")
+if MW_MARKER in esrc:
+    print(f"pi-embedded already patched ({MW_MARKER}) — skipping")
 else:
-    # Anchor: right after "if (!callback) return;" and BEFORE "if (shouldSkipUpdate"
-    # This is inside bot.on("callback_query", async (ctx) => {
-    ANCHOR = 'if (!callback) return;\n\t\tif (shouldSkipUpdate(ctx)) return;'
+    # Anchor: inject the bot.use() call right before registerTelegramHandlers({
+    # At this point `bot` is in scope (it's passed as an arg to registerTelegramHandlers).
+    ANCHOR = 'registerTelegramHandlers({'
     if ANCHOR not in esrc:
-        print("WARNING: ESM_V3 anchor not found in pi-embedded — skipping")
+        print("WARNING: registerTelegramHandlers anchor not found — skipping middleware patch")
     else:
-        cbq_pos = esrc.index('bot.on("callback_query"')
-        anchor_pos = esrc.index(ANCHOR, cbq_pos)
-        INJECT = (
-            '// PATCH: ' + EMBED_MARKER + ' — generic cb_* intercept (before shouldSkipUpdate)\n'
-            '\t\tif (/^cb_/.test(callback.data ?? "")) {\n'
-            '\t\t\ttry {\n'
-            '\t\t\t\tconst { execFileSync: _es } = await import("child_process");\n'
-            '\t\t\t\tconst _d = (callback.data ?? "").trim();\n'
-            '\t\t\t\tconst _ENGINE = "' + ENGINE_PATH + '";\n'
-            '\t\t\t\tconst _out = JSON.parse(_es("python3", [_ENGINE, "handle-callback", _d], { timeout: 8000 }).toString().trim());\n'
-            '\t\t\t\tif (!_out.error) {\n'
-            '\t\t\t\t\ttry {\n'
-            '\t\t\t\t\t\tawait bot.api.answerCallbackQuery(callback.id).catch(() => {});\n'
-            '\t\t\t\t\t\tconst _msg = callback.message;\n'
-            '\t\t\t\t\t\tconst _btns = _out.buttons || _out.inline_keyboard || [];\n'
-            '\t\t\t\t\t\tconst _rm = _btns.length ? { reply_markup: { inline_keyboard: _btns } } : {};\n'
-            '\t\t\t\t\t\tawait bot.api.editMessageText(_msg.chat.id, _msg.message_id, _out.text || "", _rm);\n'
-            '\t\t\t\t\t} catch(_te) { /* swallow Telegram errors (e.g. message not modified) */ }\n'
-            '\t\t\t\t\treturn;\n'
-            '\t\t\t\t}\n'
-            '\t\t\t} catch(_e) { /* engine error or ESM import fail — fall through */ }\n'
-            '\t\t}\n'
-            '\t\t// END PATCH: ' + EMBED_MARKER + '\n'
-            '\t\t'
-        )
-        OLD = 'if (!callback) return;\n\t\tif (shouldSkipUpdate(ctx)) return;'
-        NEW = 'if (!callback) return;\n\t\t' + INJECT + 'if (shouldSkipUpdate(ctx)) return;'
-        before = esrc[:anchor_pos]
-        after = esrc[anchor_pos:].replace(OLD, NEW, 1)
-        esrc = before + after
-        with open(EMBEDDED, 'w') as f:
-            f.write(esrc)
-        print(f"Patched pi-embedded-CbMH3G07.js with {EMBED_MARKER} (ESM-compatible, before shouldSkipUpdate)")
-
-# ─── Patch 3: pi-embedded text intercept for wizard free-text steps ────────────
-TEXT_MARKER = '_EPAPHRAS_TEXT_V1'
-with open(EMBEDDED, 'r') as f:
-    tsrc = f.read()
-
-if TEXT_MARKER in tsrc:
-    print(f"pi-embedded already has {TEXT_MARKER} — skipping text intercept")
-else:
-    # grammY registers text via bot.on("message", ...) or bot.on("message:text", ...).
-    # Inject right after the handler's opening `=> {`.
-    import re as _re
-    m = _re.search(r'bot\.on\(\s*["\']message(?::text)?["\']\s*,\s*async\s*\(([^)]*)\)\s*=>\s*\{', tsrc)
-    if not m:
-        print("WARNING: message handler anchor not found — text intercept NOT applied. "
-              "Grep the bundle: grep -n 'bot.on(\"message' " + EMBEDDED)
-    else:
-        ctx_name = m.group(1).strip() or "ctx"
-        insert_at = m.end()
-        INJECT_TEXT = (
-            '\n\t\t// PATCH: ' + TEXT_MARKER + ' — capture wizard free-text\n'
+        anchor_pos = esrc.index(ANCHOR)
+        INJECT_MW = (
+            '// PATCH: ' + MW_MARKER + ' — intercept cb_* and wizard text before LLM\n'
+            'bot.use(async (ctx, next) => {\n'
+            '\tconst _ENGINE = "' + ENGINE_PATH + '";\n'
+            '\t// cb_* fast intercept — handle in-process, skip LLM\n'
+            '\tif (ctx.callbackQuery?.data?.startsWith?.("cb_")) {\n'
             '\t\ttry {\n'
-            '\t\t\tconst _t = ' + ctx_name + '.message?.text;\n'
-            '\t\t\tif (typeof _t === "string" && !_t.startsWith("/")) {\n'
-            '\t\t\t\tconst _fs = await import("fs");\n'
-            '\t\t\t\tconst _MODES = process.env.EPAPHRAS_MODES_FILE || "' + ENGINE_PATH.replace("engine.py", "modes.json") + '";\n'
-            '\t\t\t\tlet _step = "idle", _panel = null;\n'
-            '\t\t\t\ttry { const _j = JSON.parse(_fs.readFileSync(_MODES, "utf8")); _step = _j.wizard?.step ?? "idle"; _panel = _j.panel_message_id ?? null; } catch (_re) {}\n'
-            '\t\t\t\tif (_step !== "idle") {\n'
-            '\t\t\t\t\tconst { execFileSync: _es } = await import("child_process");\n'
-            '\t\t\t\t\tconst _out = JSON.parse(_es("python3", ["' + ENGINE_PATH + '", "handle-text", _t], { timeout: 8000 }).toString().trim());\n'
-            '\t\t\t\t\tif (_out.handled) {\n'
-            '\t\t\t\t\t\tconst _btns = _out.buttons || _out.inline_keyboard || [];\n'
-            '\t\t\t\t\t\tconst _rm = _btns.length ? { reply_markup: { inline_keyboard: _btns } } : {};\n'
-            '\t\t\t\t\t\ttry { if (_panel) await bot.api.editMessageText(' + ctx_name + '.chat.id, _panel, _out.text || "", _rm); else await ' + ctx_name + '.reply(_out.text || "", _rm); } catch (_ee) {}\n'
-            '\t\t\t\t\t\ttry { await bot.api.deleteMessage(' + ctx_name + '.chat.id, ' + ctx_name + '.message.message_id).catch(() => {}); } catch (_de) {}\n'
-            '\t\t\t\t\t\treturn;\n'
-            '\t\t\t\t\t}\n'
+            '\t\t\tconst { execFileSync: _es } = await import("child_process");\n'
+            '\t\t\tconst _d = ctx.callbackQuery.data.trim();\n'
+            '\t\t\tconst _out = JSON.parse(_es("python3", [_ENGINE, "handle-callback", _d], { timeout: 8000 }).toString().trim());\n'
+            '\t\t\tif (!_out.error) {\n'
+            '\t\t\t\ttry {\n'
+            '\t\t\t\t\tawait ctx.answerCallbackQuery().catch(() => {});\n'
+            '\t\t\t\t\tconst _msg = ctx.callbackQuery.message;\n'
+            '\t\t\t\t\tconst _btns = _out.buttons || _out.inline_keyboard || [];\n'
+            '\t\t\t\t\tconst _rm = _btns.length ? { reply_markup: { inline_keyboard: _btns } } : {};\n'
+            '\t\t\t\t\tawait ctx.api.editMessageText(_msg.chat.id, _msg.message_id, _out.text || "", _rm);\n'
+            '\t\t\t\t} catch (_te) { /* swallow Telegram errors */ }\n'
+            '\t\t\t\treturn; // skip next() — LLM bypassed\n'
+            '\t\t\t}\n'
+            '\t\t} catch (_e) { /* engine error — fall through to LLM */ }\n'
+            '\t\treturn next();\n'
+            '\t}\n'
+            '\t// Wizard free-text intercept\n'
+            '\tconst _t = ctx.message?.text;\n'
+            '\tif (typeof _t === "string" && !_t.startsWith("/") && ctx.message) {\n'
+            '\t\ttry {\n'
+            '\t\t\tconst { readFileSync: _rfs } = await import("fs");\n'
+            '\t\t\tconst _MODES = process.env.EPAPHRAS_MODES_FILE || "' + MODES_PATH + '";\n'
+            '\t\t\tlet _step = "idle", _panel = null;\n'
+            '\t\t\ttry { const _j = JSON.parse(_rfs(_MODES, "utf8")); _step = _j.wizard?.step ?? "idle"; _panel = _j.panel_message_id ?? null; } catch (_re) {}\n'
+            '\t\t\tif (_step !== "idle") {\n'
+            '\t\t\t\tconst { execFileSync: _es } = await import("child_process");\n'
+            '\t\t\t\tconst _out = JSON.parse(_es("python3", [_ENGINE, "handle-text", _t], { timeout: 8000 }).toString().trim());\n'
+            '\t\t\t\tif (_out.handled) {\n'
+            '\t\t\t\t\tconst _btns = _out.buttons || _out.inline_keyboard || [];\n'
+            '\t\t\t\t\tconst _rm = _btns.length ? { reply_markup: { inline_keyboard: _btns } } : {};\n'
+            '\t\t\t\t\ttry { if (_panel) await ctx.api.editMessageText(ctx.chat.id, _panel, _out.text || "", _rm); else await ctx.reply(_out.text || "", _rm); } catch (_ee) {}\n'
+            '\t\t\t\t\ttry { await ctx.deleteMessage().catch(() => {}); } catch (_de) {}\n'
+            '\t\t\t\t\treturn; // skip next() — LLM bypassed\n'
             '\t\t\t\t}\n'
             '\t\t\t}\n'
-            '\t\t} catch (_e) { /* fall through to normal handling */ }\n'
-            '\t\t// END PATCH: ' + TEXT_MARKER + '\n'
+            '\t\t} catch (_e) { /* fall through */ }\n'
+            '\t}\n'
+            '\treturn next();\n'
+            '});\n'
+            '// END PATCH: ' + MW_MARKER + '\n'
         )
-        tsrc = tsrc[:insert_at] + INJECT_TEXT + tsrc[insert_at:]
+        esrc = esrc[:anchor_pos] + INJECT_MW + esrc[anchor_pos:]
         with open(EMBEDDED, 'w') as f:
-            f.write(tsrc)
-        print(f"Patched pi-embedded with {TEXT_MARKER} (wizard text intercept)")
+            f.write(esrc)
+        print(f"Patched pi-embedded with {MW_MARKER} (bot.use middleware, 2-param, before registerTelegramHandlers)")
