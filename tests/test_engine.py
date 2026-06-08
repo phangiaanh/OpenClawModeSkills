@@ -103,17 +103,21 @@ def test_render_modes_marks_active():
     assert out["inline_keyboard"] == out["buttons"]
 
 
-def test_render_topics_shows_toggle_marks(cfg):
-    data = engine.load_config(cfg)
+def test_render_topics_shows_toggle_marks():
+    data = engine.load_config(cfg_path())
     out = engine.render_topics(data, "culture_drama")
     assert out["inline_keyboard"] == out["buttons"]
     flat = [b for row in out["buttons"] for b in row]
     esports = next(b for b in flat if b["callback_data"] == "cb_toggle:esports")
-    assert esports["text"].startswith("✅")  # active: true in fixture
+    assert esports["text"].startswith("✅")   # active: true in fixture
     memes = next(b for b in flat if b["callback_data"] == "cb_toggle:viral_memes")
-    assert memes["text"].startswith("⬜")  # active: false
-    back = flat[-1]
-    assert back["callback_data"] == "cb_back"
+    assert memes["text"].startswith("⬜")      # active: false
+    # per-topic delete carries mode + topic id
+    assert any(b["callback_data"] == "cb_deltopic:culture_drama:esports" for b in flat)
+    # add-topic then back are the last two rows
+    assert out["buttons"][-2][0]["callback_data"] == "cb_addtopic:culture_drama"
+    assert out["buttons"][-1][0]["callback_data"] == "cb_back"
+    # legacy string platforms still render (fixture has ["TikTok", "Threads"])
     assert "TikTok + Threads" in out["text"]
 
 

@@ -120,14 +120,17 @@ def render_topics(data, mode_id=None):
     if mode_id not in data["modes"]:
         raise ConfigError(f"unknown mode: {mode_id}")
     mode = data["modes"][mode_id]
-    platforms = " + ".join(mode["platforms"])
-    text = f"{mode['icon']} {mode['name']}\nPlatforms: {platforms}\nTap a topic to toggle:"
+    platforms = " + ".join(platform_label(p) for p in mode["platforms"])
+    text = f"{mode.get('icon', DEFAULT_ICON)} {mode['name']}\nPlatforms: {platforms}\nTap a topic to toggle:"
     rows = []
     for topic_id, topic in mode["topics"].items():
         mark = "✅" if topic["active"] else "⬜"
-        rows.append([{"text": f"{mark} {topic['label']}", "callback_data": f"cb_toggle:{topic_id}"}])
+        rows.append([
+            {"text": f"{mark} {topic['label']}", "callback_data": f"cb_toggle:{topic_id}"},
+            {"text": "🗑", "callback_data": f"cb_deltopic:{mode_id}:{topic_id}"},
+        ])
+    rows.append([{"text": "➕ Add topic", "callback_data": f"cb_addtopic:{mode_id}"}])
     rows.append([{"text": "⬅️ Back to modes", "callback_data": "cb_back"}])
-    # Both field names emitted: "buttons" (pre-2026.4) and "inline_keyboard" (Telegram-native, 2026.4+)
     return {"text": text, "buttons": rows, "inline_keyboard": rows}
 
 
