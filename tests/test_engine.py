@@ -314,3 +314,43 @@ def test_fetch_accounts_network_error_raises(monkeypatch):
     monkeypatch.setattr(engine, "_get_accounts_payload", boom)
     with pytest.raises(engine.ConfigError, match="accounts fetch failed"):
         engine.fetch_accounts()
+
+
+def _wizard_picking(name="My Mode"):
+    return {"current_active_mode": "culture_drama", "modes": {},
+            "wizard": {"step": "pick_platforms", "draft": {"name": name, "platforms": []}}}
+
+
+def test_render_platforms_lists_accounts(monkeypatch):
+    _patch_payload(monkeypatch)
+    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
+    data = _wizard_picking()
+    out = engine.render_platforms(data)
+    flat = [b for row in out["buttons"] for b in row]
+    assert any(b["callback_data"] == "cb_pickplat:6a2239332b2567671ad7b555" for b in flat)
+    assert any(b["callback_data"] == "cb_createmode" for b in flat)
+    assert flat[-1]["callback_data"] == "cb_cancel"
+
+
+def test_render_platforms_token_error_shows_warning(monkeypatch):
+    monkeypatch.delenv("ZERNIO_API_TOKEN", raising=False)
+    data = _wizard_picking()
+    out = engine.render_platforms(data)
+    assert out["text"].startswith("⚠️")
+    assert out["buttons"][-1][0]["callback_data"] == "cb_cancel"
+
+
+def test_pick_platform_toggles_and_caps_at_two(monkeypatch):
+    _patch_payload(monkeypatch)
+    monkeypatch.setenv("ZERNIO_API_TOKEN", "t")
+    data = _wizard_picking()
+    engine.render_platforms(data)  # caches accounts in wizard
+    engine.pick_platform(data, "6a2239332b2567671ad7b555")
+    engine.pick_platform(data, "6a224a452b2567671ad96724")
+    plats = data["wizard"]["draft"]["platforms"]
+    assert {p["accountId"] for p in plats} == {
+        "6a2239332b2567671ad7b555", "6a224a452b2567671ad96724"}
+    # toggling an already-selected one removes it
+    engine.pick_platform(data, "6a2239332b2567671ad7b555")
+    assert {p["accountId"] for p in data["wizard"]["draft"]["platforms"]} == {
+        "6a224a452b2567671ad96724"}

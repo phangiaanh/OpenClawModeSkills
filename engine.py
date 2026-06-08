@@ -87,6 +87,55 @@ def fetch_accounts(token=None):
     return out
 
 
+def _ensure_accounts(data):
+    """Fetch the account list once per wizard and cache it under wizard['accounts']."""
+    wiz = get_wizard(data)
+    if "accounts" not in wiz:
+        wiz["accounts"] = fetch_accounts()  # may raise ConfigError
+    return wiz["accounts"]
+
+
+def render_platforms(data):
+    wiz = get_wizard(data)
+    draft = wiz.get("draft", {})
+    selected = {p["accountId"] for p in draft.get("platforms", [])}
+    cancel_only = [[{"text": "✖ Cancel", "callback_data": "cb_cancel"}]]
+    try:
+        accounts = _ensure_accounts(data)
+    except ConfigError as e:
+        return {"text": f"⚠️ {e}", "buttons": cancel_only, "inline_keyboard": cancel_only}
+    if not accounts:
+        return {"text": "⚠️ No usable accounts found.",
+                "buttons": cancel_only, "inline_keyboard": cancel_only}
+    rows = []
+    for a in accounts:
+        mark = "✅" if a["accountId"] in selected else "⬜"
+        rows.append([{"text": f"{mark} {platform_label(a)}",
+                      "callback_data": f"cb_pickplat:{a['accountId']}"}])
+    rows.append([{"text": f"✅ Create ({len(selected)}/2)", "callback_data": "cb_createmode"}])
+    rows.append([{"text": "✖ Cancel", "callback_data": "cb_cancel"}])
+    text = f"New mode: {draft.get('name', '?')}\nPick up to 2 platforms:"
+    return {"text": text, "buttons": rows, "inline_keyboard": rows}
+
+
+def pick_platform(data, account_id):
+    wiz = get_wizard(data)
+    if wiz.get("step") != "pick_platforms":
+        raise ConfigError("not picking platforms")
+    plats = wiz.setdefault("draft", {}).setdefault("platforms", [])
+    found = next((p for p in plats if p["accountId"] == account_id), None)
+    if found:
+        plats.remove(found)
+        return
+    if len(plats) >= 2:
+        return  # cap silently; render shows current selection
+    accounts = wiz.get("accounts") or fetch_accounts()
+    match = next((a for a in accounts if a["accountId"] == account_id), None)
+    if match is None:
+        raise ConfigError(f"unknown account: {account_id}")
+    plats.append(match)
+
+
 class ConfigError(Exception):
     """Raised for any unreadable/invalid config or unknown id."""
 
