@@ -171,6 +171,34 @@ def create_mode(data):
     return render_topics(data, mode_id)
 
 
+def start_add_topic(data, mode_id):
+    if mode_id not in data["modes"]:
+        raise ConfigError(f"unknown mode: {mode_id}")
+    wiz = get_wizard(data)
+    wiz["step"] = "await_topic"
+    wiz["target_mode_id"] = mode_id
+    rows = [[{"text": "✖ Cancel", "callback_data": "cb_cancel"}]]
+    return {"text": "Send the topic name:", "buttons": rows, "inline_keyboard": rows}
+
+
+def submit_topic(data, text):
+    wiz = get_wizard(data)
+    mode_id = wiz.get("target_mode_id")
+    if mode_id not in data["modes"]:
+        reset_wizard(data)
+        raise ConfigError("target mode no longer exists")
+    label = text.strip()
+    if not (1 <= len(label) <= 40):
+        rows = [[{"text": "✖ Cancel", "callback_data": "cb_cancel"}]]
+        return {"text": "⚠️ Topic must be 1–40 characters.\nSend the topic name:",
+                "buttons": rows, "inline_keyboard": rows}
+    topics = data["modes"][mode_id]["topics"]
+    topic_id = gen_id(set(topics.keys()), _slugify(label))
+    topics[topic_id] = {"label": label, "active": True}
+    reset_wizard(data)
+    return render_topics(data, mode_id)
+
+
 class ConfigError(Exception):
     """Raised for any unreadable/invalid config or unknown id."""
 

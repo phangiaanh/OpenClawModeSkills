@@ -409,3 +409,36 @@ def test_create_mode_requires_at_least_one_platform(monkeypatch):
     out = engine.create_mode(data)  # no platforms picked
     assert data["wizard"]["step"] == "pick_platforms"  # stays
     assert "Empty Mode" not in [m.get("name") for m in data["modes"].values()]
+
+
+def test_start_add_topic_sets_target():
+    data = _json.loads(FIXTURE.read_text())
+    out = engine.start_add_topic(data, "global_news")
+    assert data["wizard"]["step"] == "await_topic"
+    assert data["wizard"]["target_mode_id"] == "global_news"
+    assert "topic name" in out["text"].lower()
+
+
+def test_start_add_topic_unknown_mode_raises():
+    data = _json.loads(FIXTURE.read_text())
+    with pytest.raises(engine.ConfigError):
+        engine.start_add_topic(data, "ghost")
+
+
+def test_submit_topic_adds_active_topic():
+    data = _json.loads(FIXTURE.read_text())
+    engine.start_add_topic(data, "global_news")
+    out = engine.submit_topic(data, "Oil Prices")
+    topics = data["modes"]["global_news"]["topics"]
+    assert "oil_prices" in topics
+    assert topics["oil_prices"] == {"label": "Oil Prices", "active": True}
+    assert data["wizard"]["step"] == "idle"
+    assert "🚨" in out["text"]
+
+
+def test_submit_topic_rejects_empty():
+    data = _json.loads(FIXTURE.read_text())
+    engine.start_add_topic(data, "global_news")
+    out = engine.submit_topic(data, "   ")
+    assert out["text"].startswith("⚠️")
+    assert data["wizard"]["step"] == "await_topic"  # stays
