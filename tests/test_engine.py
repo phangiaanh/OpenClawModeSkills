@@ -213,10 +213,17 @@ def test_cli_init_seeds(tmp_path):
     assert target.exists()
 
 
-def test_toggle_raises_config_error_when_active_mode_key_missing():
+def test_toggle_falls_back_to_search_when_active_mode_missing():
     data = {"modes": {"deep_research": {"topics": {"academic_papers": {"active": True}}}}}
+    engine.toggle(data, "academic_papers")
+    assert data["modes"]["deep_research"]["topics"]["academic_papers"]["active"] is False
+    assert data["current_active_mode"] == "deep_research"
+
+
+def test_toggle_raises_config_error_when_topic_in_no_mode():
+    data = {"current_active_mode": None, "modes": {"deep_research": {"topics": {"academic_papers": {"active": True}}}}}
     with pytest.raises(engine.ConfigError):
-        engine.toggle(data, "academic_papers")
+        engine.toggle(data, "nonexistent_topic")
 
 
 def test_cli_setmode_without_arg_returns_error(cfg):

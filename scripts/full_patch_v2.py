@@ -202,21 +202,26 @@ for _old_marker in (
 if MW_MARKER in esrc:
     print(f"pi-embedded already patched ({MW_MARKER}) — skipping")
 else:
-    # Anchor: inject the bot.use() call right before registerTelegramHandlers({
-    # At this point `bot` is in scope (it's passed as an arg to registerTelegramHandlers).
-    ANCHOR = 'registerTelegramHandlers({'
+    # Anchor: inject BEFORE bot.use(botRuntime.sequentialize(...)) so our middleware
+    # runs in the grammY chain before sequentialize (which dispatches to LLM and may
+    # not call next() for all update types). Uses __require() which is the
+    # createRequire binding already imported at the top of the ESM bundle.
+    ANCHOR = '\tbot.use(botRuntime.sequentialize(getTelegramSequentialKey));'
     if ANCHOR not in esrc:
-        print("WARNING: registerTelegramHandlers anchor not found — skipping middleware patch")
-    else:
+        # Fallback to registerTelegramHandlers anchor if sequentialize not found
+        ANCHOR = 'registerTelegramHandlers({'
+        if ANCHOR not in esrc:
+            print("WARNING: no injection anchor found — skipping middleware patch")
+            ANCHOR = None
+    if ANCHOR:
         anchor_pos = esrc.index(ANCHOR)
         INJECT_MW = (
             '// PATCH: ' + MW_MARKER + ' — intercept cb_* and wizard text before LLM\n'
             'bot.use(async (ctx, next) => {\n'
             '\tconst _ENGINE = "' + ENGINE_PATH + '";\n'
-            '\t// cb_* fast intercept — handle in-process, skip LLM\n'
             '\tif (ctx.callbackQuery?.data?.startsWith?.("cb_")) {\n'
             '\t\ttry {\n'
-            '\t\t\tconst { execFileSync: _es } = await import("child_process");\n'
+            '\t\t\tconst { execFileSync: _es } = __require("child_process");\n'
             '\t\t\tconst _d = ctx.callbackQuery.data.trim();\n'
             '\t\t\tconst _out = JSON.parse(_es("python3", [_ENGINE, "handle-callback", _d], { timeout: 8000 }).toString().trim());\n'
             '\t\t\tif (!_out.error) {\n'
@@ -232,16 +237,15 @@ else:
             '\t\t} catch (_e) { /* engine error — fall through to LLM */ }\n'
             '\t\treturn next();\n'
             '\t}\n'
-            '\t// Wizard free-text intercept\n'
             '\tconst _t = ctx.message?.text;\n'
             '\tif (typeof _t === "string" && !_t.startsWith("/") && ctx.message) {\n'
             '\t\ttry {\n'
-            '\t\t\tconst { readFileSync: _rfs } = await import("fs");\n'
+            '\t\t\tconst { readFileSync: _rfs } = __require("fs");\n'
             '\t\t\tconst _MODES = process.env.EPAPHRAS_MODES_FILE || "' + MODES_PATH + '";\n'
             '\t\t\tlet _step = "idle", _panel = null;\n'
             '\t\t\ttry { const _j = JSON.parse(_rfs(_MODES, "utf8")); _step = _j.wizard?.step ?? "idle"; _panel = _j.panel_message_id ?? null; } catch (_re) {}\n'
             '\t\t\tif (_step !== "idle") {\n'
-            '\t\t\t\tconst { execFileSync: _es } = await import("child_process");\n'
+            '\t\t\t\tconst { execFileSync: _es } = __require("child_process");\n'
             '\t\t\t\tconst _out = JSON.parse(_es("python3", [_ENGINE, "handle-text", _t], { timeout: 8000 }).toString().trim());\n'
             '\t\t\t\tif (_out.handled) {\n'
             '\t\t\t\t\tconst _btns = _out.buttons || _out.inline_keyboard || [];\n'
@@ -260,4 +264,54 @@ else:
         esrc = esrc[:anchor_pos] + INJECT_MW + esrc[anchor_pos:]
         with open(EMBEDDED, 'w') as f:
             f.write(esrc)
-        print(f"Patched pi-embedded with {MW_MARKER} (bot.use middleware, 2-param, before registerTelegramHandlers)")
+        print(f"Patched pi-embedded with {MW_MARKER} (before sequentialize, uses __require)")
+
+# ─── Patch 3: CB intercept inside bot.on("callback_query") — belt-and-suspenders ─
+# Inserted right before `await processMessage(buildSyntheticContext(...))`.
+# Uses local helpers (editCallbackMessage, replyToCallbackChat) already in scope.
+# If V5 middleware handles the request first this code is never reached.
+CB_MARKER = '_EPAPHRAS_CB_INTERCEPT'
+
+# Reload after V5 patch may have written the file
+with open(EMBEDDED, 'r') as f:
+    esrc = f.read()
+
+if CB_MARKER in esrc:
+    print(f"pi-embedded already patched ({CB_MARKER}) — skipping")
+else:
+    CB_ANCHOR = '\t\t\tawait processMessage(buildSyntheticContext(ctx, buildSyntheticTextMessage({'
+    if CB_ANCHOR not in esrc:
+        print("WARNING: processMessage anchor not found — skipping CB intercept")
+    else:
+        cb_anchor_pos = esrc.index(CB_ANCHOR)
+        INJECT_CB = (
+            '// PATCH: ' + CB_MARKER + '\n'
+            '\t\t\tif (data.startsWith("cb_")) {\n'
+            '\t\t\t\ttry {\n'
+            '\t\t\t\t\tconst { execFileSync: _cbes } = __require("child_process");\n'
+            '\t\t\t\t\tconst _cbRaw = _cbes("python3", ["' + ENGINE_PATH + '", "handle-callback", data], { encoding: "utf-8", timeout: 10000 });\n'
+            '\t\t\t\t\tconst _cbOut = JSON.parse(_cbRaw);\n'
+            '\t\t\t\t\tif (_cbOut && !_cbOut.error && _cbOut.text) {\n'
+            '\t\t\t\t\t\tconst _cbKb = _cbOut.buttons ? { reply_markup: { inline_keyboard: _cbOut.buttons } } : void 0;\n'
+            '\t\t\t\t\t\ttry { await editCallbackMessage(_cbOut.text, _cbKb); } catch (_ce) { try { await replyToCallbackChat(_cbOut.text, _cbKb); } catch (_) {} }\n'
+            '\t\t\t\t\t\treturn; // LLM bypassed\n'
+            '\t\t\t\t\t}\n'
+            '\t\t\t\t\t// engine returned error — fall through to processMessage\n'
+            '\t\t\t\t} catch (_cbe) {\n'
+            '\t\t\t\t\ttry { __require("fs").appendFileSync("/tmp/cb_err.log", String(Date.now()) + " data=" + data + " err=" + String(_cbe) + "\\n"); } catch (_) {}\n'
+            '\t\t\t\t}\n'
+            '\t\t\t}\n'
+            '// END PATCH: ' + CB_MARKER + '\n'
+        )
+        esrc = esrc[:cb_anchor_pos] + INJECT_CB + esrc[cb_anchor_pos:]
+        with open(EMBEDDED, 'w') as f:
+            f.write(esrc)
+        print(f"Patched pi-embedded with {CB_MARKER} (before processMessage call)")
+        # Invalidate JITI cache so next start compiles from patched ESM
+        import os as _os, glob as _glob2
+        for _jiti in _glob2.glob('/tmp/jiti/dist-pi-embedded-*.cjs'):
+            try:
+                _os.remove(_jiti)
+                print(f"Deleted JITI cache: {_jiti}")
+            except Exception as _e:
+                print(f"WARNING: could not delete JITI cache {_jiti}: {_e}")
