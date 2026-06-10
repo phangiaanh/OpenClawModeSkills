@@ -6,15 +6,17 @@ in the openclaw gateway container.
 This patch makes cb_* Telegram button callbacks bypass the LLM and be handled
 directly by engine.py handle-callback, editing the message in ~200ms instead of 10-20s.
 
-Usage (from local machine):
-  kubectl ... exec <pod> -c gateway -- python3 /root/.openclaw/workspace/skills/OpenClawModeSkills/scripts/patch_gateway_ts.py
+Usage (inside the gateway container):
+  python3 /root/.openclaw/workspace/skills/OpenClawModeSkills/scripts/patch_gateway_ts.py
+  python3 /root/.openclaw/workspace/skills/OpenClawModeSkills/scripts/patch_gateway_ts.py --restart
 
-After running, restart the gateway:
-  kubectl ... exec <pod> -c gateway -- bash -c "kill $(pgrep -f openclaw-gateway); sleep 2; nohup openclaw gateway --allow-unconfigured > /tmp/oc_restart.log 2>&1 &"
+--restart  Patch + restart the gateway in one shot using a background subshell so
+           Kubernetes does NOT see the main process die (avoids a full pod restart
+           that would reset the overlayfs and undo the patch).
 """
 
-import re
 import os
+import subprocess
 import sys
 
 TARGET = '/app/extensions/telegram/src/bot-handlers.runtime.ts'
@@ -77,7 +79,22 @@ def apply_patch(src: str) -> str:
     return src
 
 
+SAFE_RESTART_CMD = (
+    "nohup bash -c 'sleep 2 && kill $(pgrep -f openclaw-gateway) && sleep 3"
+    " && /usr/local/bin/openclaw gateway --allow-unconfigured"
+    " >> /tmp/oc_restart.log 2>&1' > /dev/null 2>&1 &"
+)
+
+
+def do_restart():
+    print('Restarting gateway in background (pod-safe)...')
+    subprocess.Popen(SAFE_RESTART_CMD, shell=True)
+    print('Gateway will be back in ~5s. Check /tmp/oc_restart.log for status.')
+
+
 def main():
+    do_restart_flag = '--restart' in sys.argv
+
     if not os.path.exists(TARGET):
         print(f'ERROR: {TARGET} not found')
         sys.exit(1)
@@ -100,15 +117,19 @@ def main():
     open(TARGET, 'w').write(patched)
     print(f'Patched: {TARGET}')
 
-    # Clear JITI caches
     import glob
     for cache in glob.glob(JITI_CACHE_PATTERN):
         os.remove(cache)
         print(f'Cleared JITI cache: {cache}')
 
     print()
-    print('SUCCESS. Now restart the gateway:')
-    print('  kill $(pgrep -f openclaw-gateway) && sleep 2 && nohup openclaw gateway --allow-unconfigured > /tmp/oc_restart.log 2>&1 &')
+    if do_restart_flag:
+        do_restart()
+    else:
+        print('SUCCESS. To restart the gateway (pod-safe):')
+        print(f'  {SAFE_RESTART_CMD}')
+        print()
+        print('Or re-run this script with --restart to do it automatically.')
 
 
 if __name__ == '__main__':
