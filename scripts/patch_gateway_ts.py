@@ -96,30 +96,38 @@ def find_gateway_pid():
     return None
 
 
-def do_restart():
-    import signal, time
+_RESTART_HELPER = f"""\
+import os, signal, subprocess, sys, time
+time.sleep(8)
+for pid in os.listdir('/proc'):
+    if not pid.isdigit(): continue
+    try:
+        if open(f'/proc/{{pid}}/comm').read().strip() == 'openclaw-gatewa':
+            os.kill(int(pid), signal.SIGTERM)
+            break
+    except OSError: pass
+time.sleep(4)
+log = open('{RESTART_LOG}', 'a')
+subprocess.Popen(['{GATEWAY_BINARY}', 'gateway', '--allow-unconfigured'],
+    stdout=log, stderr=log, cwd='/app', start_new_session=True)
+"""
 
+
+def do_restart():
     gw_pid = find_gateway_pid()
     if gw_pid:
-        print(f'Killing gateway (PID {gw_pid})...')
-        try:
-            os.kill(gw_pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        time.sleep(4)
+        print(f'Gateway (PID {gw_pid}) will be killed in 8s.')
     else:
-        print('Gateway process not found — starting fresh.')
-
-    print(f'Starting new gateway → {RESTART_LOG}')
-    log = open(RESTART_LOG, 'a')
-    proc = subprocess.Popen(
-        [GATEWAY_BINARY, 'gateway', '--allow-unconfigured'],
-        stdout=log,
-        stderr=log,
-        cwd='/app',
-        start_new_session=True,  # detach from current process group (immune to SIGHUP)
+        print('Gateway not running — will start fresh in 8s.')
+    # Spawn a detached helper process so this script exits immediately,
+    # letting the bot send its reply before the gateway dies.
+    subprocess.Popen(
+        [sys.executable, '-c', _RESTART_HELPER],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    print(f'Gateway started (PID {proc.pid}). Check {RESTART_LOG} for status.')
+    print(f'Restart scheduled. New gateway logs → {RESTART_LOG}')
 
 
 def main():
