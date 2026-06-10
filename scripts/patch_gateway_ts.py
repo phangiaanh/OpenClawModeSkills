@@ -79,17 +79,47 @@ def apply_patch(src: str) -> str:
     return src
 
 
-SAFE_RESTART_CMD = (
-    "nohup bash -c 'sleep 2 && pkill -x openclaw-gatewa && sleep 3"
-    " && /usr/local/bin/openclaw gateway --allow-unconfigured"
-    " >> /tmp/oc_restart.log 2>&1' > /dev/null 2>&1 &"
-)
+GATEWAY_BINARY = '/usr/local/bin/openclaw'
+RESTART_LOG = '/tmp/oc_restart.log'
+
+
+def find_gateway_pid():
+    for pid in os.listdir('/proc'):
+        if not pid.isdigit():
+            continue
+        try:
+            comm = open(f'/proc/{pid}/comm').read().strip()
+            if comm == 'openclaw-gatewa':
+                return int(pid)
+        except OSError:
+            pass
+    return None
 
 
 def do_restart():
-    print('Restarting gateway in background (pod-safe)...')
-    subprocess.Popen(SAFE_RESTART_CMD, shell=True)
-    print('Gateway will be back in ~5s. Check /tmp/oc_restart.log for status.')
+    import signal, time
+
+    gw_pid = find_gateway_pid()
+    if gw_pid:
+        print(f'Killing gateway (PID {gw_pid})...')
+        try:
+            os.kill(gw_pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        time.sleep(4)
+    else:
+        print('Gateway process not found — starting fresh.')
+
+    print(f'Starting new gateway → {RESTART_LOG}')
+    log = open(RESTART_LOG, 'a')
+    proc = subprocess.Popen(
+        [GATEWAY_BINARY, 'gateway', '--allow-unconfigured'],
+        stdout=log,
+        stderr=log,
+        cwd='/app',
+        start_new_session=True,  # detach from current process group (immune to SIGHUP)
+    )
+    print(f'Gateway started (PID {proc.pid}). Check {RESTART_LOG} for status.')
 
 
 def main():
