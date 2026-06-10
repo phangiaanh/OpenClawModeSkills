@@ -80,7 +80,7 @@ def apply_patch(src: str) -> str:
 
 
 SAFE_RESTART_CMD = (
-    "nohup bash -c 'sleep 2 && kill $(pgrep -f openclaw-gateway) && sleep 3"
+    "nohup bash -c 'sleep 2 && pkill -x openclaw-gatewa && sleep 3"
     " && /usr/local/bin/openclaw gateway --allow-unconfigured"
     " >> /tmp/oc_restart.log 2>&1' > /dev/null 2>&1 &"
 )
