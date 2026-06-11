@@ -460,6 +460,16 @@ def cancel(data):
     return render_modes(data)
 
 
+def _maybe_sync(data):
+    """Best-effort drift-correct after a mutation; never raises."""
+    if not webhook_config(data).get("enabled"):
+        return
+    try:
+        sync_webhook(data)
+    except ConfigError:
+        pass  # registration is a background concern; never block the panel
+
+
 def toggle_notifications(data):
     if webhook_config(data).get("enabled"):
         disable_webhook(data)
@@ -659,7 +669,9 @@ def main(argv=None):
         "command",
         choices=["render-modes", "render-topics", "setmode", "toggle", "init",
                  "store-msgid", "get-msgid",
-                 "handle-callback", "handle-text", "render-platforms"],
+                 "handle-callback", "handle-text", "render-platforms",
+                 "webhook-status", "webhook-enable", "webhook-disable",
+                 "webhook-sync", "handle-webhook"],
     )
     parser.add_argument("arg", nargs="?", help="mode_id or topic_id")
     parser.add_argument("--file", help="path to modes.yaml")
@@ -711,6 +723,8 @@ def main(argv=None):
                 _emit({"error": "handle-callback requires a callback_data argument"})
                 return 1
             out = handle_callback(data, args.arg)
+            if args.arg != "cb_notif":  # cb_notif already (re)synced via enable/disable
+                _maybe_sync(data)
             save_config(path, data)
             _emit(out)
         elif args.command == "handle-text":
@@ -718,12 +732,31 @@ def main(argv=None):
             step = data.get("wizard", {}).get("step", "idle")
             out = handle_text(data, text)
             if step != "idle":
+                if out.get("handled"):
+                    _maybe_sync(data)
                 save_config(path, data)
             _emit(out)
         elif args.command == "render-platforms":
             out = render_platforms(data)
             save_config(path, data)  # persist cached account snapshot
             _emit(out)
+        elif args.command == "webhook-status":
+            _emit(webhook_status(data))
+        elif args.command == "webhook-enable":
+            out = enable_webhook(data)
+            save_config(path, data)
+            _emit(out)
+        elif args.command == "webhook-disable":
+            out = disable_webhook(data)
+            save_config(path, data)
+            _emit(out)
+        elif args.command == "webhook-sync":
+            out = sync_webhook(data)
+            save_config(path, data)
+            _emit(out)
+        elif args.command == "handle-webhook":
+            payload = json.loads(args.arg or "{}")
+            _emit(handle_webhook(data, payload))
         return 0
     except ConfigError as e:
         _emit({"error": str(e)})

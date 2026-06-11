@@ -830,3 +830,42 @@ def test_cb_notif_enables_then_disables(cfg, monkeypatch):
     engine.webhook_config(data)["enabled"] = True    # simulate enable side effect
     engine.handle_callback(data, "cb_notif")         # now enabled -> disable
     assert calls == ["enable", "disable"]
+
+
+def test_cli_handle_webhook(cfg, tmp_path):
+    log = tmp_path / "wh.jsonl"
+    env = dict(os.environ, EPAPHRAS_MODES_FILE=str(cfg),
+               EPAPHRAS_WEBHOOK_LOG=str(log))
+    payload = WH_FIXTURE.read_text()
+    proc = subprocess.run(
+        [sys.executable, str(Path(engine.__file__)), "handle-webhook", payload],
+        capture_output=True, text=True, env=env,
+        cwd=str(Path(engine.__file__).parent),
+    )
+    assert proc.returncode == 0
+    out = json.loads(proc.stdout)
+    assert out["notify"] is True
+    assert log.read_text().strip()  # a line was written
+
+
+def test_cli_webhook_status(cfg):
+    rc, out = run_cli(cfg, "webhook-status")
+    assert rc == 0
+    assert out["enabled"] is False
+
+
+def test_maybe_sync_swallows_errors(cfg, monkeypatch):
+    def boom(d):
+        raise engine.ConfigError("network down")
+    monkeypatch.setattr(engine, "sync_webhook", boom)
+    data = engine.load_config(cfg)
+    engine.webhook_config(data)["enabled"] = True
+    engine._maybe_sync(data)  # must not raise
+
+
+def test_maybe_sync_skips_when_disabled(cfg, monkeypatch):
+    called = []
+    monkeypatch.setattr(engine, "sync_webhook", lambda d: called.append(1))
+    data = engine.load_config(cfg)
+    engine._maybe_sync(data)
+    assert called == []
