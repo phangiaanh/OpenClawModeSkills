@@ -315,3 +315,87 @@ else:
                 print(f"Deleted JITI cache: {_jiti}")
             except Exception as _e:
                 print(f"WARNING: could not delete JITI cache {_jiti}: {_e}")
+
+# ─── Patch 4: zernio webhook receiver (_EPAPHRAS_WEBHOOK_V1) ─────────────────────
+# Mounts POST /zernio/webhook on the runtime HTTP server: verify HMAC -> dedup ->
+# ack 200 -> shell to engine.py handle-webhook (which matches + logs). No Telegram.
+#
+# Spike result (Task 8 Step 1):
+#   Bundle: /app/dist/gateway-cli-Ce2czDuO.js
+#   Framework: raw node:http createServer -> delegates to async function handleRequest(req, res)
+#   Anchor: "async function handleRequest(req, res) {" (appears exactly once)
+#   Available in scope: fs (node:fs), crypto (node:crypto), spawnSync (node:child_process)
+#   No __require() — this is an ESM bundle; use module-scope imports directly.
+import glob as _g4
+WH_MARKER = '_EPAPHRAS_WEBHOOK_V1'
+RECV_BUNDLE_GLOB = '/app/dist/gateway-cli-*.js'
+_recv_matches = _g4.glob(RECV_BUNDLE_GLOB)
+if not _recv_matches:
+    print("WARNING: receiver bundle not found — skipping Patch 4")
+else:
+    RECV_FILE = _recv_matches[0]
+    with open(RECV_FILE, 'r') as f:
+        rsrc = f.read()
+    if WH_MARKER in rsrc:
+        print(f"receiver already patched ({WH_MARKER}) — skipping")
+    else:
+        # Anchor: top of handleRequest, which is the single request dispatcher for the
+        # node:http createServer. Inject our webhook route before the websocket check so
+        # it is the very first thing evaluated for every incoming request.
+        # This anchor was verified unique (count=1) in the live pod bundle.
+        RECV_ANCHOR = 'async function handleRequest(req, res) {'
+        if RECV_ANCHOR not in rsrc:
+            print("WARNING: receiver HTTP anchor not found — skipping Patch 4 "
+                  "(re-run the Task 8 spike and update RECV_ANCHOR)")
+        else:
+            # The gateway-cli bundle uses top-level ESM imports, so fs, crypto and
+            # spawnSync are already in scope — no require() or __require() needed.
+            INJECT = (
+                'async function handleRequest(req, res) {\n'
+                '// PATCH: ' + WH_MARKER + '\n'
+                'if (req.method === "POST" && (req.url || "").split("?")[0] === "/zernio/webhook") {\n'
+                '  const _ENGINE = "' + ENGINE_PATH + '";\n'
+                '  const _MODES = process.env.EPAPHRAS_MODES_FILE || "' + MODES_PATH + '";\n'
+                '  const _chunks = [];\n'
+                '  req.on("data", (c) => _chunks.push(c));\n'
+                '  req.on("end", () => {\n'
+                '    try {\n'
+                '      const _raw = Buffer.concat(_chunks);\n'
+                '      let _secret = null, _eid = req.headers["x-zernio-event-id"] || req.headers["x-late-event-id"];\n'
+                '      try { _secret = JSON.parse(fs.readFileSync(_MODES, "utf8")).webhook?.secret || null; } catch (_) {}\n'
+                '      if (_secret) {\n'
+                '        const _sig = req.headers["x-zernio-signature"] || "";\n'
+                '        const _calc = crypto.createHmac("sha256", _secret).update(_raw).digest("hex");\n'
+                '        const _a = Buffer.from(_calc), _b = Buffer.from(String(_sig));\n'
+                '        if (_a.length !== _b.length || !crypto.timingSafeEqual(_a, _b)) {\n'
+                '          res.writeHead(401); res.end("bad signature"); return;\n'
+                '        }\n'
+                '      }\n'
+                '      globalThis.__epaphrasSeen = globalThis.__epaphrasSeen || new Set();\n'
+                '      const _seen = globalThis.__epaphrasSeen;\n'
+                '      if (_eid && _seen.has(_eid)) { res.writeHead(200); res.end("dup"); return; }\n'
+                '      if (_eid) { _seen.add(_eid); if (_seen.size > 1000) _seen.delete(_seen.values().next().value); }\n'
+                '      res.writeHead(200); res.end("ok");  // ack before processing (5s budget)\n'
+                '      try {\n'
+                '        spawnSync("python3", [_ENGINE, "handle-webhook", _raw.toString("utf8")], { timeout: 8000 });\n'
+                '      } catch (_pe) {\n'
+                '        try { fs.appendFileSync("/tmp/wh_err.log", String(_pe) + "\\n"); } catch (_) {}\n'
+                '      }\n'
+                '    } catch (_e) {\n'
+                '      try { res.writeHead(500); res.end("err"); } catch (_) {}\n'
+                '    }\n'
+                '  });\n'
+                '  return;\n'
+                '}\n'
+                '// END PATCH: ' + WH_MARKER + '\n'
+            )
+            rsrc = rsrc.replace(RECV_ANCHOR, INJECT, 1)
+            with open(RECV_FILE, 'w') as f:
+                f.write(rsrc)
+            print(f"Patched receiver with {WH_MARKER}")
+            import os as _os4
+            for _jiti in _g4.glob('/tmp/jiti/dist-gateway-cli-*.cjs'):
+                try:
+                    _os4.remove(_jiti); print(f"Deleted JITI cache: {_jiti}")
+                except Exception as _e:
+                    print(f"WARNING: could not delete JITI cache {_jiti}: {_e}")
