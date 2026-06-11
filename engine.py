@@ -3,6 +3,7 @@ import ast
 import json
 import os
 import re
+import secrets
 import shutil
 import ssl
 import sys
@@ -94,6 +95,30 @@ def _mcp_call(name, arguments=None):
 def _get_accounts_payload():
     """POST to the zernio MCP gateway for the account list."""
     return _mcp_call("accounts_list_accounts", {})
+
+
+WEBHOOK_EVENTS = ["comment.received", "message.received", "reaction.received",
+                  "review.new", "lead.received", "conversation.started"]
+WEBHOOK_NAME = "Epaphras"
+
+
+def webhook_config(data):
+    """Return the webhook block, installing a disabled default if absent."""
+    return data.setdefault("webhook", {
+        "enabled": False, "id": None, "secret": None,
+        "url": None, "events": [], "synced_at": None,
+    })
+
+
+def _gen_secret():
+    return secrets.token_hex(32)
+
+
+def webhook_url():
+    base = os.environ.get("EPAPHRAS_PUBLIC_URL")
+    if not base:
+        raise ConfigError("EPAPHRAS_PUBLIC_URL not set")
+    return base.rstrip("/") + "/zernio/webhook"
 
 
 def fetch_accounts():

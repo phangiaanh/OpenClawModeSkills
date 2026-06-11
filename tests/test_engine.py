@@ -606,3 +606,28 @@ def test_default_template_uses_object_platforms_and_idle_wizard():
     first_id = next(iter(tmpl["modes"]))
     out = engine.render_topics(tmpl, first_id)
     assert "Platforms:" in out["text"]
+
+
+def test_webhook_config_defaults(cfg):
+    data = engine.load_config(cfg)
+    wh = engine.webhook_config(data)
+    assert wh == {"enabled": False, "id": None, "secret": None,
+                  "url": None, "events": [], "synced_at": None}
+    assert data["webhook"] is wh  # installed onto data
+
+
+def test_gen_secret_is_64_hex_chars():
+    s = engine._gen_secret()
+    assert len(s) == 64 and all(c in "0123456789abcdef" for c in s)
+    assert engine._gen_secret() != s  # random
+
+
+def test_webhook_url_appends_path(monkeypatch):
+    monkeypatch.setenv("EPAPHRAS_PUBLIC_URL", "https://host.example/")
+    assert engine.webhook_url() == "https://host.example/zernio/webhook"
+
+
+def test_webhook_url_missing_env_raises(monkeypatch):
+    monkeypatch.delenv("EPAPHRAS_PUBLIC_URL", raising=False)
+    with pytest.raises(engine.ConfigError, match="EPAPHRAS_PUBLIC_URL"):
+        engine.webhook_url()
