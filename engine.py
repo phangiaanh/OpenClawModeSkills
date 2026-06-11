@@ -226,6 +226,7 @@ def enable_webhook(data):
     wh = webhook_config(data)
     url = webhook_url()
     secret = wh.get("secret") or _gen_secret()
+    # Single-user bot: no concurrent callers; the list-then-create TOCTOU window is safe.
     existing = _find_webhook_by_url(_list_webhooks(), url)
     if existing:
         wid = _wh_id(existing)
