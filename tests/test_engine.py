@@ -9,6 +9,7 @@ import pytest
 import engine
 
 FIXTURE = Path(__file__).parent / "fixtures" / "modes.sample.json"
+WH_FIXTURE = Path(__file__).parent / "fixtures" / "comment_received.sample.json"
 
 
 @pytest.fixture
@@ -631,3 +632,58 @@ def test_webhook_url_missing_env_raises(monkeypatch):
     monkeypatch.delenv("EPAPHRAS_PUBLIC_URL", raising=False)
     with pytest.raises(engine.ConfigError, match="EPAPHRAS_PUBLIC_URL"):
         engine.webhook_url()
+
+
+def test_match_event_matches_active_topic(cfg):
+    data = engine.load_config(cfg)
+    payload = json.loads(WH_FIXTURE.read_text())
+    out = engine.match_event(data, payload)
+    assert out["notify"] is True
+    assert "Esports Drama" in out["matched_topics"]
+    assert out["platform"] == "threads"
+    assert out["event"] == "comment.received"
+    assert out["event_id"] == "evt_abc123"
+    assert "esports drama" in out["snippet"].lower()
+
+
+def test_match_event_platform_not_in_mode_skips(cfg):
+    data = engine.load_config(cfg)
+    payload = json.loads(WH_FIXTURE.read_text())
+    payload["account"]["platform"] = "linkedin"  # not in culture_drama
+    out = engine.match_event(data, payload)
+    assert out["notify"] is False
+    assert out["matched_topics"] == []
+
+
+def test_match_event_no_topic_match(cfg):
+    data = engine.load_config(cfg)
+    payload = json.loads(WH_FIXTURE.read_text())
+    payload["comment"]["text"] = "just a cute cat photo"
+    out = engine.match_event(data, payload)
+    assert out["notify"] is False
+
+
+def test_match_event_unknown_platform_does_not_filter(cfg):
+    data = engine.load_config(cfg)
+    payload = json.loads(WH_FIXTURE.read_text())
+    del payload["account"]  # no resolvable platform
+    out = engine.match_event(data, payload)
+    assert out["notify"] is True  # text still matches, platform filter skipped
+
+
+def test_handle_webhook_appends_jsonl(cfg, tmp_path, monkeypatch):
+    log = tmp_path / "wh.jsonl"
+    monkeypatch.setenv("EPAPHRAS_WEBHOOK_LOG", str(log))
+    data = engine.load_config(cfg)
+    payload = json.loads(WH_FIXTURE.read_text())
+    out = engine.handle_webhook(data, payload)
+    assert out["notify"] is True
+    lines = log.read_text().strip().splitlines()
+    assert len(lines) == 1
+    rec = json.loads(lines[0])
+    assert rec["event_id"] == "evt_abc123"
+    assert rec["notify"] is True
+    assert "ts" in rec
+    # a second delivery appends a second line
+    engine.handle_webhook(data, payload)
+    assert len(log.read_text().strip().splitlines()) == 2

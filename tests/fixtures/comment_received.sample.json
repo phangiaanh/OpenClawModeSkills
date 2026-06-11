@@ -1,0 +1,7 @@
+{
+  "id": "evt_abc123",
+  "event": "comment.received",
+  "timestamp": "2026-06-11T00:00:00Z",
+  "account": { "platform": "threads", "username": "wintermelonely" },
+  "comment": { "text": "This new esports drama is absolutely wild lol", "author": "rando" }
+}

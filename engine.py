@@ -9,6 +9,7 @@ import ssl
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_TEMPLATE = Path(__file__).parent / "templates" / "modes.default.json"
@@ -119,6 +120,88 @@ def webhook_url():
     if not base:
         raise ConfigError("EPAPHRAS_PUBLIC_URL not set")
     return base.rstrip("/") + "/zernio/webhook"
+
+
+TEXT_KEYS = {"text", "body", "content", "message", "caption", "title",
+             "comment", "question", "name", "subject"}
+
+
+def _gather_text(obj):
+    """Recursively collect string values under known text-bearing keys."""
+    out = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in TEXT_KEYS and isinstance(v, str):
+                out.append(v)
+            else:
+                out.extend(_gather_text(v))
+    elif isinstance(obj, list):
+        for v in obj:
+            out.extend(_gather_text(v))
+    return out
+
+
+def _event_platform(payload):
+    for path in (("account", "platform"), ("data", "account", "platform"),
+                 ("data", "platform"), ("platform",)):
+        cur = payload
+        for key in path:
+            cur = cur.get(key) if isinstance(cur, dict) else None
+            if cur is None:
+                break
+        if isinstance(cur, str):
+            return cur
+    return None
+
+
+def _topic_matches(label, text_lower):
+    """Match if any label token (len >= 3) appears as a whole word in text."""
+    for tok in re.findall(r"[a-z0-9]+", label.lower()):
+        if len(tok) >= 3 and re.search(rf"\b{re.escape(tok)}\b", text_lower):
+            return True
+    return False
+
+
+def match_event(data, payload):
+    """Match a delivered event against the active mode's platforms + active topics."""
+    event = payload.get("event")
+    event_id = payload.get("id")
+    platform = _event_platform(payload)
+    text = " ".join(_gather_text(payload))
+    text_lower = text.lower()
+    snippet = text[:140]
+    result = {"notify": False, "matched_topics": [], "platform": platform,
+              "event": event, "event_id": event_id, "snippet": snippet}
+
+    mode_id = data.get("current_active_mode")
+    mode = data.get("modes", {}).get(mode_id)
+    if not mode:
+        return result
+    mode_platforms = {(p["platform"] if isinstance(p, dict) else p).lower()
+                      for p in mode.get("platforms", [])}
+    if platform and mode_platforms and platform.lower() not in mode_platforms:
+        return result  # delivery is for a platform this mode does not watch
+    matched = [t["label"] for t in mode.get("topics", {}).values()
+               if t.get("active") and _topic_matches(t["label"], text_lower)]
+    result["matched_topics"] = matched
+    result["notify"] = bool(matched)
+    return result
+
+
+def _webhook_log_path():
+    env = os.environ.get("EPAPHRAS_WEBHOOK_LOG")
+    return Path(env) if env else Path(__file__).parent / "webhook_events.jsonl"
+
+
+def handle_webhook(data, payload):
+    """Match an event and append the decision (one JSONL line) to the log."""
+    result = match_event(data, payload)
+    record = dict(result, ts=datetime.now(timezone.utc).isoformat())
+    path = _webhook_log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return result
 
 
 def fetch_accounts():
