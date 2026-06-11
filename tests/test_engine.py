@@ -687,3 +687,98 @@ def test_handle_webhook_appends_jsonl(cfg, tmp_path, monkeypatch):
     # a second delivery appends a second line
     engine.handle_webhook(data, payload)
     assert len(log.read_text().strip().splitlines()) == 2
+
+
+class FakeGateway:
+    """Records _mcp_call invocations and simulates the webhooks_* tools."""
+    def __init__(self, existing=None):
+        self.calls = []
+        self.webhooks = list(existing or [])
+        self._next_id = 100
+
+    def __call__(self, name, arguments=None):
+        arguments = arguments or {}
+        self.calls.append((name, arguments))
+        if name == "webhooks_get_webhook_settings":
+            return {"webhooks": self.webhooks}
+        if name == "webhooks_create_webhook_settings":
+            self._next_id += 1
+            wh = {"id": f"wh_{self._next_id}", "url": arguments["url"],
+                  "events": arguments["events"], "isActive": True}
+            self.webhooks.append(wh)
+            return wh
+        if name == "webhooks_update_webhook_settings":
+            for wh in self.webhooks:
+                if wh["id"] == arguments["id"]:
+                    wh.update({k: v for k, v in arguments.items() if v is not None})
+            return {"id": arguments["id"]}
+        if name == "webhooks_delete_webhook_settings":
+            self.webhooks = [w for w in self.webhooks if w["id"] != arguments["id"]]
+            return {"ok": True}
+        raise AssertionError(f"unexpected tool {name}")
+
+
+@pytest.fixture
+def gw(monkeypatch):
+    g = FakeGateway()
+    monkeypatch.setattr(engine, "_mcp_call", g)
+    monkeypatch.setenv("EPAPHRAS_PUBLIC_URL", "https://host.example")
+    return g
+
+
+def test_enable_webhook_creates_and_persists(cfg, gw):
+    data = engine.load_config(cfg)
+    out = engine.enable_webhook(data)
+    wh = engine.webhook_config(data)
+    assert wh["enabled"] is True
+    assert wh["id"] == "wh_101"
+    assert wh["secret"] and len(wh["secret"]) == 64
+    assert wh["url"] == "https://host.example/zernio/webhook"
+    assert wh["events"] == engine.WEBHOOK_EVENTS
+    created = [c for c in gw.calls if c[0] == "webhooks_create_webhook_settings"]
+    assert created and created[0][1]["secret"] == wh["secret"]
+    assert out["ok"] is True
+
+
+def test_enable_webhook_updates_when_url_exists(cfg, gw):
+    gw.webhooks.append({"id": "wh_9", "url": "https://host.example/zernio/webhook",
+                        "events": [], "isActive": False})
+    data = engine.load_config(cfg)
+    engine.enable_webhook(data)
+    assert engine.webhook_config(data)["id"] == "wh_9"
+    assert any(c[0] == "webhooks_update_webhook_settings" for c in gw.calls)
+    assert not any(c[0] == "webhooks_create_webhook_settings" for c in gw.calls)
+
+
+def test_enable_webhook_reuses_existing_secret(cfg, gw):
+    data = engine.load_config(cfg)
+    engine.webhook_config(data)["secret"] = "f" * 64
+    engine.enable_webhook(data)
+    assert engine.webhook_config(data)["secret"] == "f" * 64
+
+
+def test_disable_webhook_deletes_and_clears(cfg, gw):
+    data = engine.load_config(cfg)
+    engine.enable_webhook(data)
+    wid = engine.webhook_config(data)["id"]
+    engine.disable_webhook(data)
+    wh = engine.webhook_config(data)
+    assert wh["enabled"] is False
+    assert wh["id"] is None
+    assert any(c == ("webhooks_delete_webhook_settings", {"id": wid}) for c in gw.calls)
+
+
+def test_sync_webhook_noop_when_disabled(cfg, gw):
+    data = engine.load_config(cfg)
+    out = engine.sync_webhook(data)
+    assert out["skipped"] is True
+    assert gw.calls == []
+
+
+def test_sync_webhook_recreates_when_missing(cfg, gw):
+    data = engine.load_config(cfg)
+    engine.enable_webhook(data)
+    gw.webhooks.clear()           # webhook deleted in the zernio dashboard
+    engine.sync_webhook(data)
+    assert any(c[0] == "webhooks_create_webhook_settings" for c in gw.calls)
+    assert engine.webhook_config(data)["id"] is not None

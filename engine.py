@@ -204,6 +204,84 @@ def handle_webhook(data, payload):
     return result
 
 
+def _list_webhooks():
+    payload = _mcp_call("webhooks_get_webhook_settings", {})
+    return payload.get("webhooks", []) if isinstance(payload, dict) else []
+
+
+def _find_webhook_by_url(webhooks, url):
+    return next((w for w in webhooks if w.get("url") == url), None)
+
+
+def _wh_id(wh):
+    return wh.get("id") or wh.get("_id")
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def enable_webhook(data):
+    """Create-or-update the zernio webhook and persist the block. Raises ConfigError."""
+    wh = webhook_config(data)
+    url = webhook_url()
+    secret = wh.get("secret") or _gen_secret()
+    existing = _find_webhook_by_url(_list_webhooks(), url)
+    if existing:
+        wid = _wh_id(existing)
+        _mcp_call("webhooks_update_webhook_settings", {
+            "id": wid, "url": url, "events": WEBHOOK_EVENTS,
+            "secret": secret, "is_active": True})
+    else:
+        res = _mcp_call("webhooks_create_webhook_settings", {
+            "name": WEBHOOK_NAME, "url": url, "events": WEBHOOK_EVENTS,
+            "secret": secret, "is_active": True})
+        wid = _wh_id(res) if isinstance(res, dict) else None
+        if not wid:  # tolerate create responses that omit the id
+            wid = _wh_id(_find_webhook_by_url(_list_webhooks(), url) or {})
+    wh.update({"enabled": True, "id": wid, "secret": secret,
+               "url": url, "events": list(WEBHOOK_EVENTS), "synced_at": _now_iso()})
+    return {"ok": True, "enabled": True, "id": wid, "url": url}
+
+
+def disable_webhook(data):
+    """Delete the zernio webhook and mark the block disabled."""
+    wh = webhook_config(data)
+    wid = wh.get("id")
+    if wid:
+        _mcp_call("webhooks_delete_webhook_settings", {"id": wid})
+    wh.update({"enabled": False, "id": None, "synced_at": _now_iso()})
+    return {"ok": True, "enabled": False}
+
+
+def sync_webhook(data):
+    """Idempotent drift-correct: only writes when the webhook is missing/inactive
+    or its events drifted. No-op when notifications are disabled."""
+    wh = webhook_config(data)
+    if not wh.get("enabled"):
+        return {"ok": True, "skipped": True}
+    url = webhook_url()
+    existing = _find_webhook_by_url(_list_webhooks(), url)
+    if existing is None:
+        return enable_webhook(data)
+    drifted = (not existing.get("isActive", True)
+               or sorted(existing.get("events", [])) != sorted(WEBHOOK_EVENTS))
+    if drifted:
+        _mcp_call("webhooks_update_webhook_settings", {
+            "id": _wh_id(existing), "url": url, "events": WEBHOOK_EVENTS,
+            "secret": wh.get("secret"), "is_active": True})
+    wh.update({"id": _wh_id(existing), "events": list(WEBHOOK_EVENTS),
+               "synced_at": _now_iso()})
+    return {"ok": True, "synced": True, "drifted": drifted}
+
+
+def webhook_status(data):
+    wh = webhook_config(data)
+    return {"enabled": wh.get("enabled", False), "id": wh.get("id"),
+            "url": wh.get("url"), "events": wh.get("events", []),
+            "synced_at": wh.get("synced_at")}
+
+
 def fetch_accounts():
     """Return usable accounts as [{accountId, platform, handle}]. Raises ConfigError
     on network/HTTP failure or invalid response."""
