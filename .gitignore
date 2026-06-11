@@ -1,6 +1,7 @@
 modes.json
 *.bak
 *.tmp
+webhook_events.jsonl
 __pycache__/
 *.pyc
 .pytest_cache/

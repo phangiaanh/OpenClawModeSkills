@@ -65,6 +65,7 @@ python3 <skill_dir>/engine.py store-msgid <messageId>
 | `cb_deltopic:<mid>:<tid>` | confirm-delete topic |
 | `cb_confirmdel:<...>` | perform delete |
 | `cb_cancel` | cancel / reset wizard |
+| `cb_notif` | toggle zernio webhook on/off |
 
 ## Wizard flows
 
@@ -79,6 +80,35 @@ python3 <skill_dir>/engine.py store-msgid <messageId>
 ## Error handling
 
 If the engine exits non-zero, send `⚠️ <error>` as plain text.
+
+## Notifications (zernio webhook)
+
+Screen 1 shows **🔔 Notifications: On/Off**. Tapping it creates (On) or deletes (Off)
+a zernio webhook via the MCP gateway, subscribing to inbound-engagement events
+(`comment.received`, `message.received`, `reaction.received`, `review.new`,
+`lead.received`, `conversation.started`).
+
+Zernio delivers events to `POST {EPAPHRAS_PUBLIC_URL}/zernio/webhook` on the OpenClaw
+runtime (mounted by the gateway patch). The receiver verifies the `X-Zernio-Signature`
+HMAC, dedups on `X-Zernio-Event-Id`, acks `200`, then runs
+`engine.py handle-webhook <payload>`, which matches the event against the **active
+mode's** platforms and active topic labels and appends one JSON line per delivery to
+`EPAPHRAS_WEBHOOK_LOG` (default `webhook_events.jsonl`). Pushing matches to Telegram is
+not done yet — review the log file.
+
+Topic/mode/platform edits take effect on the *next* delivery with no zernio call (the
+receiver reads `modes.json` live); a best-effort `webhook-sync` after each change
+re-creates the webhook if it was deleted externally.
+
+### Env vars
+- `EPAPHRAS_MCP_GATEWAY_URL` — zernio MCP gateway (default: this deployment's gateway).
+- `EPAPHRAS_PUBLIC_URL` — public base URL of the runtime; the receiver path
+  `/zernio/webhook` is appended. **Required to enable notifications.**
+- `EPAPHRAS_WEBHOOK_LOG` — filter-decision log path (default `webhook_events.jsonl`).
+
+### Engine commands
+`webhook-status`, `webhook-enable`, `webhook-disable`, `webhook-sync`,
+`handle-webhook <payload-json>`.
 
 ## Notes
 

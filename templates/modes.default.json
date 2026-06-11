@@ -1,6 +1,7 @@
 {
   "current_active_mode": "culture_drama",
   "wizard": { "step": "idle" },
+  "webhook": { "enabled": false, "id": null, "secret": null, "url": null, "events": [], "synced_at": null },
   "modes": {
     "deep_research": {
       "name": "Research & Deep Dive",
