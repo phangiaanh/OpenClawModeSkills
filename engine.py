@@ -460,6 +460,14 @@ def cancel(data):
     return render_modes(data)
 
 
+def toggle_notifications(data):
+    if webhook_config(data).get("enabled"):
+        disable_webhook(data)
+    else:
+        enable_webhook(data)
+    return render_modes(data)
+
+
 def handle_callback(data, cb):
     if cb == "cb_back":
         return render_modes(data)
@@ -469,6 +477,8 @@ def handle_callback(data, cb):
         return create_mode(data)
     if cb == "cb_cancel":
         return cancel(data)
+    if cb == "cb_notif":
+        return toggle_notifications(data)
     if ":" not in cb:
         raise ConfigError(f"unknown callback: {cb}")
     verb, arg = cb.split(":", 1)
@@ -570,6 +580,9 @@ def render_modes(data):
             {"text": "🗑", "callback_data": f"cb_delmode:{mode_id}"},
         ])
     rows.append([{"text": "➕ New mode", "callback_data": "cb_newmode"}])
+    on = webhook_config(data).get("enabled")
+    rows.append([{"text": f"🔔 Notifications: {'On' if on else 'Off'}",
+                  "callback_data": "cb_notif"}])
     return {"text": "Epaphras — Listening Config\nPick a mode:",
             "buttons": rows, "inline_keyboard": rows}
 

@@ -90,8 +90,8 @@ def test_render_modes_marks_active():
     out = engine.render_modes(data)
     assert "buttons" in out and "text" in out and "inline_keyboard" in out
     rows = out["buttons"]
-    # 4 mode rows + 1 "New mode" row
-    assert len(rows) == 5
+    # 4 mode rows + "New mode" + "Notifications"
+    assert len(rows) == 6
     flat = [b for row in rows for b in row]
     active = next(b for b in flat if b["callback_data"] == "cb_setmode:culture_drama")
     assert "▶️" in active["text"]
@@ -99,8 +99,9 @@ def test_render_modes_marks_active():
     assert "▶️" not in inactive["text"]
     # every mode row has a delete button
     assert any(b["callback_data"] == "cb_delmode:culture_drama" for b in flat)
-    # new-mode affordance present
-    assert rows[-1][0]["callback_data"] == "cb_newmode"
+    # new-mode affordance present (now second-to-last; notifications is last)
+    assert rows[-2][0]["callback_data"] == "cb_newmode"
+    assert rows[-1][0]["callback_data"] == "cb_notif"
     assert out["inline_keyboard"] == out["buttons"]
 
 
@@ -175,7 +176,7 @@ def run_cli(cfg, *args):
 def test_cli_render_modes(cfg):
     rc, out = run_cli(cfg, "render-modes")
     assert rc == 0
-    assert len(out["buttons"]) == 5
+    assert len(out["buttons"]) == 6
 
 
 def test_cli_setmode_persists_and_returns_topics(cfg):
@@ -455,7 +456,8 @@ def test_perform_delete_mode_removes_and_reassigns_active():
     out = engine.perform_delete(data, "mode:culture_drama")
     assert "culture_drama" not in data["modes"]
     assert data["current_active_mode"] in data["modes"]
-    assert out["buttons"][-1][0]["callback_data"] == "cb_newmode"  # Screen 1
+    assert out["buttons"][-2][0]["callback_data"] == "cb_newmode"  # Screen 1 (notifications is last)
+    assert out["buttons"][-1][0]["callback_data"] == "cb_notif"
 
 
 def test_perform_delete_topic_removes_only_target():
@@ -491,7 +493,8 @@ def test_handle_callback_cancel_resets_to_modes():
     engine.start_new_mode(data)
     out = engine.handle_callback(data, "cb_cancel")
     assert data["wizard"]["step"] == "idle"
-    assert out["buttons"][-1][0]["callback_data"] == "cb_newmode"
+    assert out["buttons"][-2][0]["callback_data"] == "cb_newmode"
+    assert out["buttons"][-1][0]["callback_data"] == "cb_notif"
 
 
 def test_handle_callback_unknown_raises():
@@ -797,3 +800,33 @@ def test_enable_webhook_raises_when_id_unresolvable(cfg, monkeypatch):
     data = engine.load_config(cfg)
     with pytest.raises(engine.ConfigError, match="unresolvable"):
         engine.enable_webhook(data)
+
+
+def test_render_modes_shows_notifications_off_by_default(cfg):
+    data = engine.load_config(cfg)
+    screen = engine.render_modes(data)
+    flat = [b for row in screen["buttons"] for b in row]
+    notif = next(b for b in flat if b["callback_data"] == "cb_notif")
+    assert "Off" in notif["text"] and "🔔" in notif["text"]
+
+
+def test_render_modes_shows_notifications_on_when_enabled(cfg):
+    data = engine.load_config(cfg)
+    engine.webhook_config(data)["enabled"] = True
+    flat = [b for row in engine.render_modes(data)["buttons"] for b in row]
+    notif = next(b for b in flat if b["callback_data"] == "cb_notif")
+    assert "On" in notif["text"]
+
+
+def test_cb_notif_enables_then_disables(cfg, monkeypatch):
+    calls = []
+    monkeypatch.setattr(engine, "enable_webhook",
+                        lambda d: calls.append("enable") or {"ok": True})
+    monkeypatch.setattr(engine, "disable_webhook",
+                        lambda d: calls.append("disable") or {"ok": True})
+    data = engine.load_config(cfg)
+    engine.handle_callback(data, "cb_notif")        # was disabled -> enable
+    assert calls == ["enable"]
+    engine.webhook_config(data)["enabled"] = True    # simulate enable side effect
+    engine.handle_callback(data, "cb_notif")         # now enabled -> disable
+    assert calls == ["enable", "disable"]
