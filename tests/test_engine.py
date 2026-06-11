@@ -542,6 +542,44 @@ def test_cli_handle_callback_unknown_error_envelope(cfg):
     assert "error" in out
 
 
+def test_mcp_call_parses_sse_repr(monkeypatch):
+    captured = {}
+
+    class FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return (
+            b"event: message\n"
+            b"data: {\"jsonrpc\": \"2.0\", \"id\": 2, \"result\": "
+            b"{\"content\": [{\"type\": \"text\", \"text\": \"{'webhooks': []}\"}]}}\n\n"
+        )
+
+    def fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data.decode())
+        return FakeResp()
+
+    monkeypatch.setattr(engine.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("EPAPHRAS_MCP_GATEWAY_URL", "https://gw.example/zernio")
+    out = engine._mcp_call("webhooks_get_webhook_settings", {})
+    assert out == {"webhooks": []}
+    assert captured["url"] == "https://gw.example/zernio"
+    assert captured["body"]["params"]["name"] == "webhooks_get_webhook_settings"
+    assert captured["body"]["params"]["arguments"] == {}
+
+
+def test_mcp_call_raises_on_error_envelope(monkeypatch):
+    class FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'data: {"error": "Invalid API key"}\n\n'
+
+    monkeypatch.setattr(engine.urllib.request, "urlopen",
+                        lambda req, timeout=None, context=None: FakeResp())
+    with pytest.raises(engine.ConfigError, match="mcp error"):
+        engine._mcp_call("webhooks_get_webhook_settings", {})
+
+
 def test_default_template_uses_object_platforms_and_idle_wizard():
     import json as _j
     tmpl = _j.loads((Path(__file__).parent.parent / "templates" / "modes.default.json").read_text())

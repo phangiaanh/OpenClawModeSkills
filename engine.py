@@ -54,17 +54,23 @@ def reset_wizard(data):
     return data
 
 
-MCP_GATEWAY_URL = "https://gw-zernio-53461.agentbase-gateway.aiplatform.vngcloud.vn/zernio"
-_MCP_BODY = json.dumps({
-    "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-    "params": {"name": "accounts_list_accounts", "arguments": {}},
-}).encode()
+DEFAULT_MCP_GATEWAY_URL = "https://gw-watermelon-111735.agentbase-gateway.aiplatform.vngcloud.vn/zernio"
 
 
-def _get_accounts_payload():
-    """POST to the zernio MCP gateway. Split out so tests can monkeypatch it."""
+def _mcp_call(name, arguments=None):
+    """Call a tool on the zernio MCP gateway and return the parsed result.
+
+    The gateway returns SSE ("event: message\\ndata: {...}") whose result text is
+    a Python repr (None/True/False), not JSON. Split out so tests can monkeypatch
+    urllib. Raises ConfigError on a JSON-RPC error envelope.
+    """
+    url = os.environ.get("EPAPHRAS_MCP_GATEWAY_URL", DEFAULT_MCP_GATEWAY_URL)
+    body = json.dumps({
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": name, "arguments": arguments or {}},
+    }).encode()
     req = urllib.request.Request(
-        MCP_GATEWAY_URL, data=_MCP_BODY,
+        url, data=body,
         headers={"Content-Type": "application/json",
                  "Accept": "application/json, text/event-stream",
                  "User-Agent": "curl/8.0.0"},
@@ -73,18 +79,21 @@ def _get_accounts_payload():
     ctx = ssl.create_default_context()
     with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
         raw = resp.read().decode()
-    # Gateway returns SSE: "event: message\ndata: {...}\n\n"
-    # Find the data: line and parse it as JSON.
     envelope = None
     for line in raw.splitlines():
         if line.startswith("data: "):
             envelope = json.loads(line[6:])
             break
     if envelope is None:
-        # Fallback: try parsing the whole body as JSON (non-SSE error responses)
         envelope = json.loads(raw)
-    # Response text is Python repr (None/True/False), not JSON
+    if "error" in envelope:
+        raise ConfigError(f"mcp error: {envelope['error']}")
     return ast.literal_eval(envelope["result"]["content"][0]["text"])
+
+
+def _get_accounts_payload():
+    """POST to the zernio MCP gateway for the account list."""
+    return _mcp_call("accounts_list_accounts", {})
 
 
 def fetch_accounts():
