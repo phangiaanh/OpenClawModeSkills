@@ -631,10 +631,9 @@ def test_webhook_url_appends_path(monkeypatch):
     assert engine.webhook_url() == "https://host.example/zernio/webhook"
 
 
-def test_webhook_url_missing_env_raises(monkeypatch):
+def test_webhook_url_falls_back_to_default(monkeypatch):
     monkeypatch.delenv("EPAPHRAS_PUBLIC_URL", raising=False)
-    with pytest.raises(engine.ConfigError, match="EPAPHRAS_PUBLIC_URL"):
-        engine.webhook_url()
+    assert engine.webhook_url() == engine.DEFAULT_PUBLIC_URL.rstrip("/") + "/zernio/webhook"
 
 
 def test_match_event_matches_active_topic(cfg):

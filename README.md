@@ -15,10 +15,10 @@ Requires only Python 3 standard library — no pip or external packages needed.
    `templates/modes.default.json` on first use.
 4. The platform picker calls the zernio MCP gateway (token embedded in the gateway URL);
    no extra env vars required.
-5. (Optional) To enable zernio notifications, set `EPAPHRAS_PUBLIC_URL` to the
-   runtime's public base URL. Tap **🔔 Notifications** in the panel to register the
-   webhook. Filter decisions are logged to `webhook_events.jsonl` (configurable via
-   `EPAPHRAS_WEBHOOK_LOG`); Telegram delivery of matches is not yet implemented.
+5. (Optional) Tap **🔔 Notifications** in the panel to register the zernio webhook.
+   Filter decisions are logged to `webhook_events.jsonl` (configurable via
+   `EPAPHRAS_WEBHOOK_LOG`). Set `EPAPHRAS_PUBLIC_URL` to override the default public
+   base URL; Telegram delivery of matches is not yet implemented.
 
 ## Usage
 

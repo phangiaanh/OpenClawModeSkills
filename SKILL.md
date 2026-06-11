@@ -103,7 +103,7 @@ re-creates the webhook if it was deleted externally.
 ### Env vars
 - `EPAPHRAS_MCP_GATEWAY_URL` — zernio MCP gateway (default: this deployment's gateway).
 - `EPAPHRAS_PUBLIC_URL` — public base URL of the runtime; the receiver path
-  `/zernio/webhook` is appended. **Required to enable notifications.**
+  `/zernio/webhook` is appended. Defaults to this deployment's public URL.
 - `EPAPHRAS_WEBHOOK_LOG` — filter-decision log path (default `webhook_events.jsonl`).
 
 ### Engine commands

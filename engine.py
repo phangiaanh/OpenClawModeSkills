@@ -57,6 +57,7 @@ def reset_wizard(data):
 
 
 DEFAULT_MCP_GATEWAY_URL = "https://gw-watermelon-111735.agentbase-gateway.aiplatform.vngcloud.vn/zernio"
+DEFAULT_PUBLIC_URL = "https://openclaw-111735-epaphras.agentbase-runtime.aiplatform.vngcloud.vn"
 
 
 def _mcp_call(name, arguments=None):
@@ -116,9 +117,7 @@ def _gen_secret():
 
 
 def webhook_url():
-    base = os.environ.get("EPAPHRAS_PUBLIC_URL")
-    if not base:
-        raise ConfigError("EPAPHRAS_PUBLIC_URL not set")
+    base = os.environ.get("EPAPHRAS_PUBLIC_URL", DEFAULT_PUBLIC_URL)
     return base.rstrip("/") + "/zernio/webhook"
 
 
