@@ -361,7 +361,7 @@ else:
                 '  req.on("end", () => {\n'
                 '    try {\n'
                 '      const _raw = Buffer.concat(_chunks);\n'
-                '      let _secret = null, _eid = req.headers["x-zernio-event-id"] || req.headers["x-late-event-id"];\n'
+                '      let _secret = null, _eid = req.headers["x-zernio-event-id"];\n'
                 '      try { _secret = JSON.parse(fs.readFileSync(_MODES, "utf8")).webhook?.secret || null; } catch (_) {}\n'
                 '      if (_secret) {\n'
                 '        const _sig = req.headers["x-zernio-signature"] || "";\n'
