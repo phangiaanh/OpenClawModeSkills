@@ -580,6 +580,21 @@ def test_mcp_call_raises_on_error_envelope(monkeypatch):
         engine._mcp_call("webhooks_get_webhook_settings", {})
 
 
+def test_mcp_call_no_false_positive_on_null_error(monkeypatch):
+    """A valid result envelope with an extra null 'error' key must not raise."""
+    class FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return (
+            b"data: {\"jsonrpc\": \"2.0\", \"id\": 2, \"error\": null, \"result\": "
+            b"{\"content\": [{\"type\": \"text\", \"text\": \"{'ok': True}\"}]}}\n\n"
+        )
+    monkeypatch.setattr(engine.urllib.request, "urlopen",
+                        lambda req, timeout=None, context=None: FakeResp())
+    out = engine._mcp_call("some_tool", {})
+    assert out == {"ok": True}
+
+
 def test_default_template_uses_object_platforms_and_idle_wizard():
     import json as _j
     tmpl = _j.loads((Path(__file__).parent.parent / "templates" / "modes.default.json").read_text())

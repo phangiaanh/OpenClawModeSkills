@@ -86,8 +86,8 @@ def _mcp_call(name, arguments=None):
             break
     if envelope is None:
         envelope = json.loads(raw)
-    if "error" in envelope:
-        raise ConfigError(f"mcp error: {envelope['error']}")
+    if "result" not in envelope:
+        raise ConfigError(f"mcp error: {envelope.get('error')}")
     return ast.literal_eval(envelope["result"]["content"][0]["text"])
 
 
