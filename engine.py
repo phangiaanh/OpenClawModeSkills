@@ -273,7 +273,7 @@ def sync_webhook(data):
         _mcp_call("webhooks_update_webhook_settings", {
             "id": _wh_id(existing), "url": url, "events": WEBHOOK_EVENTS,
             "secret": wh.get("secret"), "is_active": True})
-    wh.update({"id": _wh_id(existing), "events": list(WEBHOOK_EVENTS),
+    wh.update({"id": _wh_id(existing), "url": url, "events": list(WEBHOOK_EVENTS),
                "synced_at": _now_iso()})
     return {"ok": True, "synced": True, "drifted": drifted}
 
