@@ -238,8 +238,10 @@ def enable_webhook(data):
             "name": WEBHOOK_NAME, "url": url, "events": WEBHOOK_EVENTS,
             "secret": secret, "is_active": True})
         wid = _wh_id(res) if isinstance(res, dict) else None
-        if not wid:  # tolerate create responses that omit the id
+        if not wid:
             wid = _wh_id(_find_webhook_by_url(_list_webhooks(), url) or {})
+        if not wid:
+            raise ConfigError("webhook created but id unresolvable")
     wh.update({"enabled": True, "id": wid, "secret": secret,
                "url": url, "events": list(WEBHOOK_EVENTS), "synced_at": _now_iso()})
     return {"ok": True, "enabled": True, "id": wid, "url": url}

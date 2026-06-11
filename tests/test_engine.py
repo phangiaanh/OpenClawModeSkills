@@ -782,3 +782,18 @@ def test_sync_webhook_recreates_when_missing(cfg, gw):
     engine.sync_webhook(data)
     assert any(c[0] == "webhooks_create_webhook_settings" for c in gw.calls)
     assert engine.webhook_config(data)["id"] is not None
+
+
+def test_enable_webhook_raises_when_id_unresolvable(cfg, monkeypatch):
+    monkeypatch.setenv("EPAPHRAS_PUBLIC_URL", "https://host.example")
+    # create returns no id, and list returns empty
+    def bad_mcp(name, arguments=None):
+        if name == "webhooks_get_webhook_settings":
+            return {"webhooks": []}
+        if name == "webhooks_create_webhook_settings":
+            return {"ok": True}  # no id field
+        raise AssertionError(f"unexpected: {name}")
+    monkeypatch.setattr(engine, "_mcp_call", bad_mcp)
+    data = engine.load_config(cfg)
+    with pytest.raises(engine.ConfigError, match="unresolvable"):
+        engine.enable_webhook(data)
