@@ -28,7 +28,7 @@ def _sc_get(path, params):
     JSON failure or a `success: false` envelope.
     """
     qs = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
-    url = f"{SC_BASE}{path}?{qs}"
+    url = f"{SC_BASE}{path}?{qs}" if qs else f"{SC_BASE}{path}"
     req = urllib.request.Request(
         url,
         headers={"x-api-key": _api_key(), "Accept": "application/json",
