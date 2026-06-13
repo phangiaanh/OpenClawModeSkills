@@ -63,7 +63,7 @@ These shaped every decision; they are verified properties of SocialCrawl, not as
 | Score weights | **comments/shares ≈ 2× likes; β≈0.6 (magnitude-leaning); gravity≈1.5** | Drama/culture mode values conversation + spread + persistence; all tunable in config. |
 | Dedup | **Re-log trajectory** (track posts across polls) | A post that holds the top over hours is genuinely top-of-day; enables velocity + "hours_trending". |
 | Floor | **Absolute per-platform numeric thresholds** | Safety net under per-platform normalization; prevents "top of a dead batch" from logging. |
-| Volume cap | **Top-N per topic per poll** (default 5) | Bounds log size; only the cream surfaces. |
+| Volume cap | **Top-N per (topic × platform) per poll** (default 3) | Guarantees every watched platform surfaces (you chose them deliberately); avoids one platform sweeping a topic. |
 | Cadence | **Hourly, 08:00–20:00, local tz (ICT default)**, active topics only | Trends build over hours; windowed + active-only bounds credit spend. |
 | Output | **Append JSONL log only** (no Telegram) | Validate polling/dedup first; delivery deferred (seam left in place). |
 | API key | **`SOCIALCRAWL_API_KEY` env var** (`sc_…`) | Real secret; never committed (zernio used a token-in-URL gateway). |
@@ -81,7 +81,7 @@ engine.py poll  (all logic; unit-testable)
   4. normalize              → unified record per post
   5. floor filter           → drop posts below platform absolute floor
   6. score + state          → magnitude + velocity + recency; update poll_state.json
-  7. rank + cap             → per topic, top_n_per_topic by score
+  7. rank + cap             → per (topic × platform), top_n_per_platform_topic by score
   8. log                    → append JSONL (rank, hours_trending)
   9. summary                → {polled, found, logged, credits_used, credits_remaining}
 ```
@@ -116,7 +116,7 @@ and are unit-testable.
     "interval_minutes": 60,
     "window": { "start": "08:00", "end": "20:00", "tz": "Asia/Ho_Chi_Minh" },
     "lookback": "24h",
-    "top_n_per_topic": 5,
+    "top_n_per_platform_topic": 3,
     "score":  { "w_like": 1, "w_comment": 2, "w_share": 2, "w_reach": 1, "beta": 0.6, "gravity": 1.5 },
     "floors": {
       "tiktok":  { "views": 100000, "likes": 10000 },
@@ -180,9 +180,11 @@ Defaults: `w_like=1, w_comment=2, w_share=2, w_reach=1`, `beta=0.6` (magnitude-l
 to the same per-platform baseline as magnitude. Missing metrics default to 0.
 
 **Gating order:** (1) absolute per-platform **floor** removes non-notable posts; (2) score the
-survivors; (3) **top-N per topic** keeps only the highest scores. A post enters the tracked set the
-first hour it clears floor + top-N, re-logs each poll while it holds, and ages out when it drops
-below floor — so `hours_trending` measures how long it held the bar.
+survivors; (3) **top-N per (topic × platform)** keeps only the highest scores *within each
+platform* (default 3), so every watched platform is represented and no single platform sweeps a
+topic. A post enters the tracked set the first hour it clears floor + top-N, re-logs each poll
+while it holds, and ages out when it drops below floor — so `hours_trending` measures how long it
+held the bar.
 
 ## 7. Component surface (`engine.py` + `socialcrawl.py`)
 
