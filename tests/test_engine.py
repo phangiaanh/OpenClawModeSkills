@@ -914,3 +914,44 @@ def test_sc_get_unsuccessful_envelope_raises(monkeypatch):
     monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
     with pytest.raises(socialcrawl.SocialCrawlError, match="api error"):
         socialcrawl._sc_get("/threads/search", {"query": "x"})
+
+
+def _sc_fixture(name):
+    return _json.loads((Path(__file__).parent / "fixtures" / name).read_text())
+
+
+def test_normalize_threads_maps_unified_fields():
+    item = _sc_fixture("threads_search.sample.json")["data"]["results"][0]
+    rec = socialcrawl.normalize_threads(item)
+    assert rec["post_id"] == "th_1"
+    assert rec["author"] == {"handle": "gamer", "followers": 12000}
+    assert rec["likes"] == 820 and rec["comments"] == 140 and rec["shares"] == 260
+    assert rec["created"] == "2026-06-13T02:00:00+00:00"
+
+
+def test_normalize_tiktok_maps_stats_and_epoch():
+    item = _sc_fixture("tiktok_search.sample.json")["data"]["results"][0]
+    rec = socialcrawl.normalize_tiktok(item)
+    assert rec["likes"] == 120000 and rec["comments"] == 8000 and rec["shares"] == 30000
+    assert rec["views"] == 1500000 and rec["reach"] == 1500000
+    assert rec["created"].startswith("2025-")  # epoch 1749780000 -> ISO UTC
+
+
+def test_normalize_reddit_maps_score_and_joins_text():
+    item = _sc_fixture("reddit_search.sample.json")["data"]["results"][0]
+    rec = socialcrawl.normalize_reddit(item)
+    assert rec["likes"] == 2400 and rec["comments"] == 540 and rec["shares"] == 0
+    assert rec["text"] == "Esports org implodes full breakdown of the drama"
+    assert rec["author"] == {"handle": "redditor", "followers": 0}
+
+
+def test_search_adapter_returns_records_and_credits(monkeypatch):
+    monkeypatch.setattr(socialcrawl, "_sc_get",
+                        lambda path, params: _sc_fixture("reddit_search.sample.json"))
+    records, credits = socialcrawl.search_reddit("esports", "24h")
+    assert credits == 939
+    assert len(records) == 1 and records[0]["post_id"] == "rd_1"
+
+
+def test_search_adapters_capability_map_keys():
+    assert set(socialcrawl.SEARCH_ADAPTERS) == {"threads", "tiktok", "reddit"}

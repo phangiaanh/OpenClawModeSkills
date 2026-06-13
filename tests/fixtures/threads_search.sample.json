@@ -1,0 +1,17 @@
+{
+  "success": true,
+  "platform": "threads",
+  "data": {
+    "results": [
+      {
+        "id": "th_1",
+        "url": "https://www.threads.net/@gamer/post/1",
+        "text": "huge esports drama unfolding right now",
+        "author": {"username": "gamer", "followers": 12000},
+        "published_on": "2026-06-13T02:00:00+00:00",
+        "likes": 820, "replies": 140, "reposts": 260, "views": 50000
+      }
+    ]
+  },
+  "credits_remaining": 941
+}

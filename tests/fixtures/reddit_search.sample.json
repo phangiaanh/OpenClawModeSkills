@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "platform": "reddit",
+  "data": {
+    "results": [
+      {
+        "id": "rd_1",
+        "url": "https://www.reddit.com/r/esports/comments/1",
+        "title": "Esports org implodes",
+        "selftext": "full breakdown of the drama",
+        "author": "redditor",
+        "subreddit": "esports",
+        "created_utc": 1749780000,
+        "score": 2400,
+        "num_comments": 540
+      }
+    ]
+  },
+  "credits_remaining": 939
+}
