@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import subprocess
@@ -8,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import engine
+import socialcrawl
 
 FIXTURE = Path(__file__).parent / "fixtures" / "modes.sample.json"
 WH_FIXTURE = Path(__file__).parent / "fixtures" / "comment_received.sample.json"
@@ -1081,3 +1083,100 @@ def test_poll_gate_blocks_disabled_and_no_mode():
     data["poll"]["enabled"] = True
     data["current_active_mode"] = None
     assert engine.poll_gate(data, now)["reason"] == "no active mode"
+
+
+def _poll_data():
+    return {
+        "current_active_mode": "culture_drama",
+        "modes": {"culture_drama": {
+            "name": "Drama & Cultural Pulse", "icon": "🎭",
+            "platforms": ["tiktok", "reddit"],
+            "topics": {"esports": {"label": "Esports", "query": "esports", "active": True},
+                       "music": {"label": "Music", "query": "music", "active": False}},
+        }},
+        "poll": copy.deepcopy(engine.DEFAULT_POLL),
+    }
+
+
+def _now_inside():
+    return datetime(2026, 6, 13, 2, 0, tzinfo=timezone.utc)  # 09:00 ICT
+
+
+def test_run_poll_skips_outside_window(tmp_path):
+    data = _poll_data()
+    out = engine.run_poll(
+        data, now=datetime(2026, 6, 13, 14, 0, tzinfo=timezone.utc),
+        search_fn=lambda *a: ([], 100), capable_platforms={"tiktok", "reddit"},
+        state={"posts": {}}, log_path=tmp_path / "log.jsonl")
+    assert out["skipped"] is True and out["reason"] == "outside window"
+
+
+def test_run_poll_logs_top_n_per_platform_and_applies_floor(tmp_path):
+    data = _poll_data()
+    data["poll"]["top_n_per_platform_topic"] = 1
+    # tiktok: one post clears the 100k-views floor, one does not
+    tiktok = [
+        {"post_id": "tt_big", "url": "u", "text": "t", "author": {"handle": "a", "followers": 1},
+         "created": "2026-06-13T01:00:00+00:00", "likes": 50000, "comments": 9000,
+         "shares": 9000, "views": 2000000, "reach": 2000000},
+        {"post_id": "tt_small", "url": "u", "text": "t", "author": {"handle": "b", "followers": 1},
+         "created": "2026-06-13T01:00:00+00:00", "likes": 1, "comments": 1,
+         "shares": 1, "views": 10, "reach": 10},
+    ]
+    reddit = [
+        {"post_id": "rd_1", "url": "u", "text": "t", "author": {"handle": "c", "followers": 0},
+         "created": "2026-06-13T01:00:00+00:00", "likes": 3000, "comments": 800,
+         "shares": 0, "views": 0, "reach": 0},
+    ]
+
+    def search_fn(platform, query, lookback):
+        return ({"tiktok": tiktok, "reddit": reddit}[platform], 500)
+
+    log = tmp_path / "log.jsonl"
+    out = engine.run_poll(data, now=_now_inside(), search_fn=search_fn,
+                          capable_platforms={"tiktok", "reddit"},
+                          state={"posts": {}}, log_path=log)
+    lines = [json.loads(l) for l in log.read_text().splitlines()]
+    ids = {l["post_id"] for l in lines}
+    assert ids == {"tt_big", "rd_1"}          # tt_small filtered by floor; top-1 each platform
+    assert all(l["topic"] == "esports" for l in lines)   # music inactive, not polled
+    assert out["logged"] == 2 and out["polled"] == 2     # 1 topic x 2 platforms
+
+
+def test_run_poll_continues_when_one_platform_fails(tmp_path):
+    data = _poll_data()
+    reddit = [{"post_id": "rd_1", "url": "u", "text": "t",
+               "author": {"handle": "c", "followers": 0},
+               "created": "2026-06-13T01:00:00+00:00", "likes": 3000,
+               "comments": 800, "shares": 0, "views": 0, "reach": 0}]
+
+    def search_fn(platform, query, lookback):
+        if platform == "tiktok":
+            raise socialcrawl.SocialCrawlError("boom")
+        return (reddit, 500)
+
+    log = tmp_path / "log.jsonl"
+    out = engine.run_poll(data, now=_now_inside(), search_fn=search_fn,
+                          capable_platforms={"tiktok", "reddit"},
+                          state={"posts": {}}, log_path=log)
+    assert any("tiktok" in m for m in out["markers"])
+    assert out["logged"] == 1                  # reddit still logged
+
+
+def test_run_poll_computes_velocity_from_state(tmp_path):
+    data = _poll_data()
+    data["modes"]["culture_drama"]["platforms"] = ["reddit"]
+    prev = datetime(2026, 6, 13, 1, 0, tzinfo=timezone.utc)
+    state = {"posts": {"reddit:rd_1": {"first_seen": prev.isoformat(),
+             "last_seen": prev.isoformat(), "last_raw": 100.0, "peak_score": 0.1,
+             "topic": "esports"}}}
+    reddit = [{"post_id": "rd_1", "url": "u", "text": "t",
+               "author": {"handle": "c", "followers": 0},
+               "created": "2026-06-13T01:00:00+00:00", "likes": 3000,
+               "comments": 800, "shares": 0, "views": 0, "reach": 0}]
+    log = tmp_path / "log.jsonl"
+    engine.run_poll(data, now=_now_inside(), search_fn=lambda *a: (reddit, 500),
+                    capable_platforms={"reddit"}, state=state, log_path=log)
+    rec = json.loads(log.read_text().splitlines()[0])
+    assert rec["velocity"] > 0                 # raw grew vs last_raw over 1h
+    assert rec["hours_trending"] == 1.0        # first_seen 1h before now

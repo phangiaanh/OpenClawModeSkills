@@ -196,6 +196,87 @@ def poll_gate(data, now):
     return None
 
 
+def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
+             low_credit_threshold=0):
+    """One poll tick. Searches active topics x searchable platforms, scores,
+    floors, caps top-N per (topic x platform), re-logs to JSONL. Never raises
+    on a single platform failure."""
+    gate = poll_gate(data, now)
+    if gate:
+        return gate
+    pcfg = poll_config(data)
+    mode = data["modes"][data["current_active_mode"]]
+    platforms = [p for p in mode.get("platforms", []) if p in capable_platforms]
+    active_topics = {tid: t for tid, t in mode.get("topics", {}).items() if t.get("active")}
+    if not platforms or not active_topics:
+        return {"skipped": True, "reason": "nothing to poll"}
+
+    score_cfg, floors = pcfg["score"], pcfg["floors"]
+    top_n, lookback = pcfg["top_n_per_platform_topic"], pcfg["lookback"]
+    state.setdefault("posts", {})
+    log_lines, markers = [], []
+    polled = found = logged = 0
+    credits_remaining = None
+
+    for tid, topic in active_topics.items():
+        query = topic_query(topic)
+        for platform in platforms:
+            if credits_remaining is not None and credits_remaining <= low_credit_threshold:
+                markers.append("low credits")
+                break
+            polled += 1
+            try:
+                records, credits_remaining = search_fn(platform, query, lookback)
+            except Exception as e:  # SocialCrawlError or any adapter failure
+                markers.append(f"{platform} fetch failed: {e}")
+                continue
+            found += len(records)
+            eligible = [r for r in records if passes_floor(r, floors.get(platform, {}))]
+            if not eligible:
+                continue
+            baseline = platform_baseline([raw_engagement(r, score_cfg) for r in eligible])
+            scored = []
+            for r in eligible:
+                raw = raw_engagement(r, score_cfg)
+                key = f"{platform}:{r['post_id']}"
+                prev = state["posts"].get(key)
+                dhours = _hours_since(prev["last_seen"], now) if prev else 0.0
+                vel = velocity(raw, prev["last_raw"], dhours) if prev else 0.0
+                mag = magnitude(raw, baseline)
+                vel_norm = vel / baseline if baseline else 0.0
+                age_h = _hours_since(r.get("created"), now)
+                sc = trend_score(mag, vel_norm, score_cfg["beta"],
+                                 recency(age_h, score_cfg["gravity"]))
+                scored.append((sc, raw, mag, vel, r, key))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            for rank, (sc, raw, mag, vel, r, key) in enumerate(scored[:top_n], 1):
+                entry = update_state(state, key, raw, now, sc, tid)
+                log_lines.append({
+                    "ts": now.isoformat(), "topic": tid, "platform": platform,
+                    "post_id": r["post_id"], "url": r.get("url"), "text": r.get("text", ""),
+                    "author": r.get("author", {}), "created": r.get("created"),
+                    "likes": r.get("likes", 0), "comments": r.get("comments", 0),
+                    "shares": r.get("shares", 0), "reach": r.get("reach", 0),
+                    "magnitude": round(mag, 4), "velocity": round(vel, 4),
+                    "score": round(sc, 4), "rank": rank,
+                    "hours_trending": round(_hours_since(entry["first_seen"], now), 2),
+                })
+                logged += 1
+
+    age_out_state(state, now)
+    if log_lines or markers:
+        path = Path(log_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            for line in log_lines:
+                f.write(json.dumps(line, ensure_ascii=False) + "\n")
+            for m in markers:
+                f.write(json.dumps({"ts": now.isoformat(), "marker": m},
+                                   ensure_ascii=False) + "\n")
+    return {"polled": polled, "found": found, "logged": logged,
+            "credits_remaining": credits_remaining, "markers": markers}
+
+
 def get_wizard(data):
     return data.setdefault("wizard", {"step": "idle"})
 
