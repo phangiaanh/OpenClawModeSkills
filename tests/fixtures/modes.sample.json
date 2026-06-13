@@ -17,7 +17,7 @@
       "icon": "🎭",
       "platforms": ["TikTok", "Threads"],
       "topics": {
-        "esports": { "label": "Esports Drama", "active": true },
+        "esports": { "label": "Esports Drama", "query": "esports", "active": true },
         "vtuber_gossip": { "label": "Vtuber/Streamer Gossip", "active": true },
         "viral_memes": { "label": "Viral Memes", "active": false },
         "cancel_culture": { "label": "Cancel Culture", "active": false }
