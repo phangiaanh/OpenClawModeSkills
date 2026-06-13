@@ -366,8 +366,7 @@ def test_start_new_mode_enters_await_name():
     assert out["buttons"][-1][0]["callback_data"] == "cb_cancel"
 
 
-def test_submit_name_advances_to_pick_platforms(monkeypatch):
-    _patch_payload(monkeypatch)
+def test_submit_name_advances_to_pick_platforms():
     data = {"current_active_mode": "x", "modes": {}}
     engine.start_new_mode(data)
     out = engine.submit_name(data, "  Crypto Watch  ")
@@ -511,8 +510,7 @@ def test_handle_text_idle_not_handled():
     assert engine.handle_text(data, "hello") == {"handled": False}
 
 
-def test_handle_text_await_name_handled(monkeypatch):
-    _patch_payload(monkeypatch)
+def test_handle_text_await_name_handled():
     data = _json.loads(FIXTURE.read_text())
     engine.start_new_mode(data)
     out = engine.handle_text(data, "Crypto Watch")

@@ -1,12 +1,9 @@
 """Epaphras Modes engine: modes.json IO, mutation, and Telegram payload rendering."""
-import ast
 import copy
 import json
 import os
 import re
-import secrets
 import shutil
-import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -324,260 +321,6 @@ def reset_wizard(data):
     return data
 
 
-DEFAULT_MCP_GATEWAY_URL = "https://gw-watermelon-111735.agentbase-gateway.aiplatform.vngcloud.vn/zernio"
-DEFAULT_PUBLIC_URL = "https://openclaw-111735-epaphras.agentbase-runtime.aiplatform.vngcloud.vn"
-
-
-def _mcp_call(name, arguments=None):
-    """Call a tool on the zernio MCP gateway and return the parsed result.
-
-    The gateway returns SSE ("event: message\\ndata: {...}") whose result text is
-    a Python repr (None/True/False), not JSON. Split out so tests can monkeypatch
-    urllib. Raises ConfigError on a JSON-RPC error envelope.
-    """
-    url = os.environ.get("EPAPHRAS_MCP_GATEWAY_URL", DEFAULT_MCP_GATEWAY_URL)
-    body = json.dumps({
-        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-        "params": {"name": name, "arguments": arguments or {}},
-    }).encode()
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"Content-Type": "application/json",
-                 "Accept": "application/json, text/event-stream",
-                 "User-Agent": "curl/8.0.0"},
-        method="POST",
-    )
-    ctx = ssl.create_default_context()
-    with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
-        raw = resp.read().decode()
-    envelope = None
-    for line in raw.splitlines():
-        if line.startswith("data: "):
-            envelope = json.loads(line[6:])
-            break
-    if envelope is None:
-        envelope = json.loads(raw)
-    if "result" not in envelope:
-        raise ConfigError(f"mcp error: {envelope.get('error')}")
-    return ast.literal_eval(envelope["result"]["content"][0]["text"])
-
-
-def _get_accounts_payload():
-    """POST to the zernio MCP gateway for the account list."""
-    return _mcp_call("accounts_list_accounts", {})
-
-
-WEBHOOK_EVENTS = ["comment.received", "message.received", "reaction.received",
-                  "review.new", "lead.received", "conversation.started"]
-WEBHOOK_NAME = "Epaphras"
-
-
-def webhook_config(data):
-    """Return the webhook block, installing a disabled default if absent."""
-    return data.setdefault("webhook", {
-        "enabled": False, "id": None, "secret": None,
-        "url": None, "events": [], "synced_at": None,
-    })
-
-
-def _gen_secret():
-    return secrets.token_hex(32)
-
-
-def webhook_url():
-    base = os.environ.get("EPAPHRAS_PUBLIC_URL", DEFAULT_PUBLIC_URL)
-    return base.rstrip("/") + "/zernio/webhook"
-
-
-TEXT_KEYS = {"text", "body", "content", "message", "caption", "title",
-             "comment", "question", "name", "subject"}
-
-
-def _gather_text(obj):
-    """Recursively collect string values under known text-bearing keys."""
-    out = []
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if k in TEXT_KEYS and isinstance(v, str):
-                out.append(v)
-            else:
-                out.extend(_gather_text(v))
-    elif isinstance(obj, list):
-        for v in obj:
-            out.extend(_gather_text(v))
-    return out
-
-
-def _event_platform(payload):
-    for path in (("account", "platform"), ("data", "account", "platform"),
-                 ("data", "platform"), ("platform",)):
-        cur = payload
-        for key in path:
-            cur = cur.get(key) if isinstance(cur, dict) else None
-            if cur is None:
-                break
-        if isinstance(cur, str):
-            return cur
-    return None
-
-
-def _topic_matches(label, text_lower):
-    """Match if any label token (len >= 3) appears as a whole word in text."""
-    for tok in re.findall(r"[a-z0-9]+", label.lower()):
-        if len(tok) >= 3 and re.search(rf"\b{re.escape(tok)}\b", text_lower):
-            return True
-    return False
-
-
-def match_event(data, payload):
-    """Match a delivered event against the active mode's platforms + active topics."""
-    event = payload.get("event")
-    event_id = payload.get("id")
-    platform = _event_platform(payload)
-    text = " ".join(_gather_text(payload))
-    text_lower = text.lower()
-    snippet = text[:140]
-    result = {"notify": False, "matched_topics": [], "platform": platform,
-              "event": event, "event_id": event_id, "snippet": snippet}
-
-    mode_id = data.get("current_active_mode")
-    mode = data.get("modes", {}).get(mode_id)
-    if not mode:
-        return result
-    mode_platforms = {(p["platform"] if isinstance(p, dict) else p).lower()
-                      for p in mode.get("platforms", [])}
-    if platform and mode_platforms and platform.lower() not in mode_platforms:
-        return result  # delivery is for a platform this mode does not watch
-    matched = [t["label"] for t in mode.get("topics", {}).values()
-               if t.get("active") and _topic_matches(t["label"], text_lower)]
-    result["matched_topics"] = matched
-    result["notify"] = bool(matched)
-    return result
-
-
-def _webhook_log_path():
-    env = os.environ.get("EPAPHRAS_WEBHOOK_LOG")
-    return Path(env) if env else Path(__file__).parent / "webhook_events.jsonl"
-
-
-def handle_webhook(data, payload):
-    """Match an event and append the decision (one JSONL line) to the log."""
-    result = match_event(data, payload)
-    record = dict(result, ts=datetime.now(timezone.utc).isoformat())
-    path = _webhook_log_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
-    return result
-
-
-def _list_webhooks():
-    payload = _mcp_call("webhooks_get_webhook_settings", {})
-    return payload.get("webhooks", []) if isinstance(payload, dict) else []
-
-
-def _find_webhook_by_url(webhooks, url):
-    return next((w for w in webhooks if w.get("url") == url), None)
-
-
-def _wh_id(wh):
-    return wh.get("id") or wh.get("_id")
-
-
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def enable_webhook(data):
-    """Create-or-update the zernio webhook and persist the block. Raises ConfigError."""
-    wh = webhook_config(data)
-    url = webhook_url()
-    secret = wh.get("secret") or _gen_secret()
-    # Single-user bot: no concurrent callers; the list-then-create TOCTOU window is safe.
-    existing = _find_webhook_by_url(_list_webhooks(), url)
-    if existing:
-        wid = _wh_id(existing)
-        _mcp_call("webhooks_update_webhook_settings", {
-            "id": wid, "url": url, "events": WEBHOOK_EVENTS,
-            "secret": secret, "is_active": True})
-    else:
-        res = _mcp_call("webhooks_create_webhook_settings", {
-            "name": WEBHOOK_NAME, "url": url, "events": WEBHOOK_EVENTS,
-            "secret": secret, "is_active": True})
-        wid = _wh_id(res) if isinstance(res, dict) else None
-        if not wid:
-            wid = _wh_id(_find_webhook_by_url(_list_webhooks(), url) or {})
-        if not wid:
-            raise ConfigError("webhook created but id unresolvable")
-    wh.update({"enabled": True, "id": wid, "secret": secret,
-               "url": url, "events": list(WEBHOOK_EVENTS), "synced_at": _now_iso()})
-    return {"ok": True, "enabled": True, "id": wid, "url": url}
-
-
-def disable_webhook(data):
-    """Delete the zernio webhook and mark the block disabled."""
-    wh = webhook_config(data)
-    wid = wh.get("id")
-    if wid:
-        _mcp_call("webhooks_delete_webhook_settings", {"id": wid})
-    wh.update({"enabled": False, "id": None, "synced_at": _now_iso()})
-    return {"ok": True, "enabled": False}
-
-
-def sync_webhook(data):
-    """Idempotent drift-correct: only writes when the webhook is missing/inactive
-    or its events drifted. No-op when notifications are disabled."""
-    wh = webhook_config(data)
-    if not wh.get("enabled"):
-        return {"ok": True, "skipped": True}
-    url = webhook_url()
-    existing = _find_webhook_by_url(_list_webhooks(), url)
-    if existing is None:
-        return enable_webhook(data)
-    drifted = (not existing.get("isActive", True)
-               or sorted(existing.get("events", [])) != sorted(WEBHOOK_EVENTS))
-    if drifted:
-        _mcp_call("webhooks_update_webhook_settings", {
-            "id": _wh_id(existing), "url": url, "events": WEBHOOK_EVENTS,
-            "secret": wh.get("secret"), "is_active": True})
-    wh.update({"id": _wh_id(existing), "url": url, "events": list(WEBHOOK_EVENTS),
-               "synced_at": _now_iso()})
-    return {"ok": True, "synced": True, "drifted": drifted}
-
-
-def webhook_status(data):
-    wh = webhook_config(data)
-    return {"enabled": wh.get("enabled", False), "id": wh.get("id"),
-            "url": wh.get("url"), "events": wh.get("events", []),
-            "synced_at": wh.get("synced_at")}
-
-
-def fetch_accounts():
-    """Return usable accounts as [{accountId, platform, handle}]. Raises ConfigError
-    on network/HTTP failure or invalid response."""
-    try:
-        payload = _get_accounts_payload()
-    except (json.JSONDecodeError, KeyError, ValueError, SyntaxError) as e:
-        raise ConfigError(f"accounts response invalid: {e}")
-    except (urllib.error.URLError, OSError) as e:
-        raise ConfigError(f"accounts fetch failed: {e}")
-    out = []
-    for a in payload.get("accounts", []):
-        if not (a.get("enabled") and a.get("isActive") and a.get("platformStatus") == "active"):
-            continue
-        out.append({"accountId": a.get("_id"),
-                    "platform": a.get("platform"),
-                    "handle": a.get("username")})
-    return out
-
-
-def _ensure_accounts(data):
-    """Fetch the account list once per wizard and cache it under wizard['accounts']."""
-    wiz = get_wizard(data)
-    if "accounts" not in wiz:
-        wiz["accounts"] = fetch_accounts()  # may raise ConfigError
-    return wiz["accounts"]
-
 
 def render_platforms(data):
     wiz = get_wizard(data)
@@ -711,24 +454,6 @@ def perform_delete(data, spec):
 
 def cancel(data):
     reset_wizard(data)
-    return render_modes(data)
-
-
-def _maybe_sync(data):
-    """Best-effort drift-correct after a mutation; never raises."""
-    if not webhook_config(data).get("enabled"):
-        return
-    try:
-        sync_webhook(data)
-    except ConfigError:
-        pass  # registration is a background concern; never block the panel
-
-
-def toggle_notifications(data):
-    if webhook_config(data).get("enabled"):
-        disable_webhook(data)
-    else:
-        enable_webhook(data)
     return render_modes(data)
 
 
@@ -929,9 +654,7 @@ def main(argv=None):
         "command",
         choices=["render-modes", "render-topics", "setmode", "toggle", "init",
                  "store-msgid", "get-msgid", "poll",
-                 "handle-callback", "handle-text", "render-platforms",
-                 "webhook-status", "webhook-enable", "webhook-disable",
-                 "webhook-sync", "handle-webhook"],
+                 "handle-callback", "handle-text", "render-platforms"],
     )
     parser.add_argument("arg", nargs="?", help="mode_id or topic_id")
     parser.add_argument("--file", help="path to modes.yaml")
@@ -987,8 +710,6 @@ def main(argv=None):
                 _emit({"error": "handle-callback requires a callback_data argument"})
                 return 1
             out = handle_callback(data, args.arg)
-            if args.arg != "cb_notif":  # cb_notif already (re)synced via enable/disable
-                _maybe_sync(data)
             save_config(path, data)
             _emit(out)
         elif args.command == "handle-text":
@@ -996,31 +717,11 @@ def main(argv=None):
             step = data.get("wizard", {}).get("step", "idle")
             out = handle_text(data, text)
             if step != "idle":
-                if out.get("handled"):
-                    _maybe_sync(data)
                 save_config(path, data)
             _emit(out)
         elif args.command == "render-platforms":
             out = render_platforms(data)
-            save_config(path, data)  # persist cached account snapshot
             _emit(out)
-        elif args.command == "webhook-status":
-            _emit(webhook_status(data))
-        elif args.command == "webhook-enable":
-            out = enable_webhook(data)
-            save_config(path, data)
-            _emit(out)
-        elif args.command == "webhook-disable":
-            out = disable_webhook(data)
-            save_config(path, data)
-            _emit(out)
-        elif args.command == "webhook-sync":
-            out = sync_webhook(data)
-            save_config(path, data)
-            _emit(out)
-        elif args.command == "handle-webhook":
-            payload = json.loads(args.arg or "{}")
-            _emit(handle_webhook(data, payload))
         return 0
     except ConfigError as e:
         _emit({"error": str(e)})
