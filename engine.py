@@ -95,6 +95,26 @@ def trend_score(magnitude_val, velocity_norm, beta, recency_factor):
     return (beta * magnitude_val + (1 - beta) * velocity_norm) * recency_factor
 
 
+def passes_floor(record, floor):
+    """True if the record meets/exceeds ANY configured floor metric (OR semantics)."""
+    if not floor:
+        return True
+    return any(record.get(metric, 0) >= threshold for metric, threshold in floor.items())
+
+
+def _hours_since(iso_str, now):
+    """Hours between an ISO timestamp and `now` (>= 0). 0 if unparseable/missing."""
+    if not iso_str:
+        return 0.0
+    try:
+        ts = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return 0.0
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return max(0.0, (now - ts).total_seconds() / 3600.0)
+
+
 def get_wizard(data):
     return data.setdefault("wizard", {"step": "idle"})
 

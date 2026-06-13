@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -996,3 +997,18 @@ def test_recency_decays_with_age():
 def test_trend_score_blends_magnitude_and_velocity():
     # (0.6*10 + 0.4*5) * 1.0 = 8.0
     assert engine.trend_score(10, 5, 0.6, 1.0) == 8.0
+
+
+def test_passes_floor_or_semantics():
+    floor = {"views": 100000, "likes": 10000}
+    assert engine.passes_floor({"views": 150000, "likes": 0}, floor) is True   # views clears
+    assert engine.passes_floor({"views": 0, "likes": 12000}, floor) is True    # likes clears
+    assert engine.passes_floor({"views": 5, "likes": 5}, floor) is False
+    assert engine.passes_floor({"likes": 1}, {}) is True                        # no floor -> pass
+
+
+def test_hours_since_parses_iso_and_z():
+    now = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
+    assert engine._hours_since("2026-06-13T10:00:00+00:00", now) == 2.0
+    assert engine._hours_since("2026-06-13T10:00:00Z", now) == 2.0
+    assert engine._hours_since(None, now) == 0.0      # missing -> 0
