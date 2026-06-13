@@ -1180,3 +1180,42 @@ def test_run_poll_computes_velocity_from_state(tmp_path):
     rec = json.loads(log.read_text().splitlines()[0])
     assert rec["velocity"] > 0                 # raw grew vs last_raw over 1h
     assert rec["hours_trending"] == 1.0        # first_seen 1h before now
+
+
+def test_cli_poll_skips_when_disabled(cfg, monkeypatch):
+    # disable polling in the live config, then run the CLI: no network, rc 0
+    data = engine.load_config(cfg)
+    engine.poll_config(data)["enabled"] = False
+    engine.save_config(cfg, data)
+    rc, out = run_cli(cfg, "poll")
+    assert rc == 0
+    assert out["skipped"] is True and out["reason"] == "disabled"
+
+
+def test_cli_poll_missing_key_errors_when_work_due(cfg, monkeypatch):
+    data = engine.load_config(cfg)
+    pc = engine.poll_config(data)
+    pc["enabled"] = True
+    pc["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}  # always inside
+    engine.save_config(cfg, data)
+    env = dict(os.environ); env.pop("SOCIALCRAWL_API_KEY", None)
+    root = Path(__file__).parent.parent
+    proc = subprocess.run(
+        [sys.executable, str(root / "engine.py"), "poll", "--file", str(cfg)],
+        capture_output=True, text=True, env=env)
+    assert proc.returncode == 1
+    assert "SOCIALCRAWL_API_KEY" in json.loads(proc.stdout)["error"]
+
+
+def test_cli_poll_lock_blocks_second_run(cfg, monkeypatch):
+    data = engine.load_config(cfg)
+    pc = engine.poll_config(data)
+    pc["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}
+    engine.save_config(cfg, data)
+    lock = engine._poll_lock_path()
+    lock.write_text("999999")
+    try:
+        rc, out = run_cli(cfg, "poll")
+        assert rc == 0 and out["reason"] == "locked"
+    finally:
+        lock.unlink(missing_ok=True)

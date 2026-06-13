@@ -277,6 +277,44 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
             "credits_remaining": credits_remaining, "markers": markers}
 
 
+def _poll_log_path():
+    env = os.environ.get("EPAPHRAS_POLL_LOG")
+    return Path(env) if env else Path(__file__).parent / "trending_posts.jsonl"
+
+
+def _state_path():
+    return Path(__file__).parent / "poll_state.json"
+
+
+def _poll_lock_path():
+    return Path(__file__).parent / "poll.lock"
+
+
+def cli_poll(data):
+    """Drive run_poll with real adapters, state store, log, and a lockfile."""
+    now = datetime.now(timezone.utc)
+    gate = poll_gate(data, now)
+    if gate:
+        return gate
+    lock = _poll_lock_path()
+    if lock.exists():
+        return {"skipped": True, "reason": "locked"}
+    if not os.environ.get("SOCIALCRAWL_API_KEY"):
+        return {"error": "SOCIALCRAWL_API_KEY not set"}
+    lock.write_text(str(os.getpid()))
+    try:
+        state = load_state(_state_path())
+        summary = run_poll(
+            data, now=now,
+            search_fn=lambda platform, q, lb: socialcrawl.SEARCH_ADAPTERS[platform](q, lb),
+            capable_platforms=set(socialcrawl.SEARCH_ADAPTERS),
+            state=state, log_path=_poll_log_path())
+        save_state(_state_path(), state)
+        return summary
+    finally:
+        lock.unlink(missing_ok=True)
+
+
 def get_wizard(data):
     return data.setdefault("wizard", {"step": "idle"})
 
@@ -897,7 +935,7 @@ def main(argv=None):
     parser.add_argument(
         "command",
         choices=["render-modes", "render-topics", "setmode", "toggle", "init",
-                 "store-msgid", "get-msgid",
+                 "store-msgid", "get-msgid", "poll",
                  "handle-callback", "handle-text", "render-platforms",
                  "webhook-status", "webhook-enable", "webhook-disable",
                  "webhook-sync", "handle-webhook"],
@@ -947,6 +985,10 @@ def main(argv=None):
             _emit({"ok": True, "message_id": data["panel_message_id"]})
         elif args.command == "get-msgid":
             _emit(get_panel_msgid(data))
+        elif args.command == "poll":
+            out = cli_poll(data)
+            _emit(out)
+            return 1 if "error" in out else 0
         elif args.command == "handle-callback":
             if not args.arg:
                 _emit({"error": "handle-callback requires a callback_data argument"})
