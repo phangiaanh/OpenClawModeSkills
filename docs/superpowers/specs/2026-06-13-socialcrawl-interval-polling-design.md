@@ -153,9 +153,15 @@ drop below floor.
 
 ```json
 {"ts":"…","topic":"esports","platform":"tiktok","post_id":"…","url":"…","text":"…",
- "created":"…","likes":0,"comments":0,"shares":0,"reach":0,
+ "author":{"handle":"…","followers":0},"created":"…",
+ "likes":0,"comments":0,"shares":0,"reach":0,
  "magnitude":0.0,"velocity":0.0,"score":0.0,"rank":1,"hours_trending":3}
 ```
+
+`author` (handle + followers), `url`, full `text`, and per-platform `created`/`first_seen` are
+retained deliberately as the substrate for **future wave monitoring** (§13) — they are the raw
+material a later cross-platform content-matching step would join on. Logging `author` now is
+lossless and cheap; omitting it would make past content unrecoverable for that feature.
 
 ### UI
 
@@ -193,8 +199,8 @@ held the bar.
   `ConfigError` on `success:false` / HTTP / network failure / missing key.
 - Per-platform adapters behind the capability map: `search_threads`, `search_tiktok`,
   `search_reddit` — each owns its path, param translation (`lookback` → native recency param),
-  native sort, and normalizer → unified record `{post_id, url, text, created, likes, comments,
-  shares, views, reach, followers}`.
+  native sort, and normalizer → unified record `{post_id, url, text, author:{handle, followers},
+  created, likes, comments, shares, views, reach}`.
 
 ### `engine.py` (additions)
 | Command | Effect | Returns |
@@ -278,3 +284,25 @@ OpenClawModeSkills/
 - Multiple concurrent active modes / multi-tenant.
 - Per-platform trending endpoints (e.g. `/tiktok/trending`, 5 cr) — local scoring covers trending
   from search results today.
+
+## 13. Future direction: wave monitoring (not built here)
+
+A planned later feature will track how a piece of content **spreads from one platform to another**
+(a "wave"). It is explicitly **out of scope** for this project, but two decisions here are made to
+keep it cheaply buildable later — this section records the seam so we don't paint into a corner:
+
+- **Per-platform records, not pooled.** Top-N is scoped per (topic × platform) and the state store
+  keys on `platform:post_id`, so each platform's sighting of trending content — and its
+  `first_seen` timestamp — is preserved independently. That ordering (who had it first, how fast it
+  jumped) is the core wave signal and would be lost under pooling.
+- **Rich per-post logging.** Each log line retains `url`, full `text`, `author.handle`, and
+  per-platform `created`/`first_seen`. These are the **join keys** a future cross-platform matcher
+  would use to decide that a TikTok video, a Threads post, and a Reddit thread are "the same
+  content": a shared external URL, near-duplicate normalized text, or the same author across
+  networks.
+
+**Deliberately deferred** (do *not* build now): the content-matching/clustering engine itself, any
+content-fingerprint/hashing scheme, media-level matching, and the cross-platform timeline/graph.
+When built, the matcher should compute its fingerprint *from the already-logged fields above* — no
+data captured here is wave-specific or speculative; it is all independently useful for the trending
+log today.
