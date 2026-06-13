@@ -582,42 +582,30 @@ def _ensure_accounts(data):
 def render_platforms(data):
     wiz = get_wizard(data)
     draft = wiz.get("draft", {})
-    selected = {p["accountId"] for p in draft.get("platforms", [])}
-    cancel_only = [[{"text": "✖ Cancel", "callback_data": "cb_cancel"}]]
-    try:
-        accounts = _ensure_accounts(data)
-    except ConfigError as e:
-        return {"text": f"⚠️ {e}", "buttons": cancel_only, "inline_keyboard": cancel_only}
-    if not accounts:
-        return {"text": "⚠️ No usable accounts found.",
-                "buttons": cancel_only, "inline_keyboard": cancel_only}
+    selected = set(draft.get("platforms", []))
     rows = []
-    for a in accounts:
-        mark = "✅" if a["accountId"] in selected else "⬜"
-        rows.append([{"text": f"{mark} {platform_label(a)}",
-                      "callback_data": f"cb_pickplat:{a['accountId']}"}])
-    rows.append([{"text": f"✅ Create ({len(selected)}/2)", "callback_data": "cb_createmode"}])
+    for name in sorted(socialcrawl.SEARCH_ADAPTERS):
+        mark = "✅" if name in selected else "⬜"
+        emoji = PLATFORM_EMOJI.get(name, "🌐")
+        rows.append([{"text": f"{mark} {emoji} {name}",
+                      "callback_data": f"cb_pickplat:{name}"}])
+    rows.append([{"text": f"✅ Create ({len(selected)})", "callback_data": "cb_createmode"}])
     rows.append([{"text": "✖ Cancel", "callback_data": "cb_cancel"}])
-    text = f"New mode: {draft.get('name', '?')}\nPick up to 2 platforms:"
+    text = f"New mode: {draft.get('name', '?')}\nPick searchable platforms:"
     return {"text": text, "buttons": rows, "inline_keyboard": rows}
 
 
-def pick_platform(data, account_id):
+def pick_platform(data, platform):
     wiz = get_wizard(data)
     if wiz.get("step") != "pick_platforms":
         raise ConfigError("not picking platforms")
+    if platform not in socialcrawl.SEARCH_ADAPTERS:
+        raise ConfigError(f"platform not searchable: {platform}")
     plats = wiz.setdefault("draft", {}).setdefault("platforms", [])
-    found = next((p for p in plats if p["accountId"] == account_id), None)
-    if found:
-        plats.remove(found)
-        return
-    if len(plats) >= 2:
-        return  # cap silently; render shows current selection
-    accounts = wiz.get("accounts") or fetch_accounts()
-    match = next((a for a in accounts if a["accountId"] == account_id), None)
-    if match is None:
-        raise ConfigError(f"unknown account: {account_id}")
-    plats.append(match)
+    if platform in plats:
+        plats.remove(platform)
+    else:
+        plats.append(platform)
 
 
 def start_new_mode(data):
@@ -634,7 +622,6 @@ def submit_name(data, text):
         return {"text": "⚠️ Name must be 1–40 characters.\nSend a name for the new mode:",
                 "buttons": rows, "inline_keyboard": rows}
     wiz["draft"] = {"name": name, "platforms": []}
-    wiz.pop("accounts", None)  # force a fresh fetch for this mode
     wiz["step"] = "pick_platforms"
     return render_platforms(data)
 
@@ -643,12 +630,12 @@ def create_mode(data):
     wiz = get_wizard(data)
     draft = wiz.get("draft", {})
     plats = draft.get("platforms", [])
-    if not (1 <= len(plats) <= 2):
-        return render_platforms(data)  # not ready; stay on picker
+    if not plats:
+        return render_platforms(data)  # need at least one platform; stay on picker
     mode_id = gen_id(set(data["modes"].keys()), _slugify(draft["name"]))
     data["modes"][mode_id] = {
         "name": draft["name"], "icon": DEFAULT_ICON,
-        "platforms": plats, "topics": {},
+        "platforms": list(plats), "topics": {},
     }
     data["current_active_mode"] = mode_id
     reset_wizard(data)

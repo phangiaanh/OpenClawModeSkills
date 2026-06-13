@@ -1244,3 +1244,55 @@ def test_cb_notif_toggles_poll_enabled(cfg):
     assert engine.poll_config(data)["enabled"] is True
     engine.handle_callback(data, "cb_notif")
     assert engine.poll_config(data)["enabled"] is False
+
+
+def _picking_data(name="My Mode"):
+    return {"current_active_mode": "x", "modes": {},
+            "wizard": {"step": "pick_platforms", "draft": {"name": name, "platforms": []}}}
+
+
+def test_render_platforms_lists_capability_map():
+    data = _picking_data()
+    flat = [b for row in engine.render_platforms(data)["buttons"] for b in row]
+    cbs = {b["callback_data"] for b in flat}
+    assert "cb_pickplat:threads" in cbs
+    assert "cb_pickplat:tiktok" in cbs
+    assert "cb_pickplat:reddit" in cbs
+    assert "cb_createmode" in cbs
+    assert flat[-1]["callback_data"] == "cb_cancel"
+
+
+def test_pick_platform_toggles_string_names():
+    data = _picking_data()
+    engine.pick_platform(data, "tiktok")
+    engine.pick_platform(data, "reddit")
+    assert data["wizard"]["draft"]["platforms"] == ["tiktok", "reddit"]
+    engine.pick_platform(data, "tiktok")            # toggle off
+    assert data["wizard"]["draft"]["platforms"] == ["reddit"]
+
+
+def test_pick_platform_rejects_uncapable():
+    data = _picking_data()
+    with pytest.raises(engine.ConfigError):
+        engine.pick_platform(data, "facebook")
+
+
+def test_create_mode_stores_string_platforms_and_activates():
+    data = {"current_active_mode": "x", "modes": {}}
+    engine.start_new_mode(data)
+    engine.submit_name(data, "Crypto Watch")
+    engine.pick_platform(data, "reddit")
+    engine.create_mode(data)
+    new_id = data["current_active_mode"]
+    assert new_id == "crypto_watch"
+    assert data["modes"][new_id]["platforms"] == ["reddit"]
+    assert data["modes"][new_id]["topics"] == {}
+
+
+def test_create_mode_requires_a_platform():
+    data = {"current_active_mode": "x", "modes": {}}
+    engine.start_new_mode(data)
+    engine.submit_name(data, "Empty")
+    engine.create_mode(data)                         # none picked
+    assert data["wizard"]["step"] == "pick_platforms"
+    assert "Empty" not in [m.get("name") for m in data["modes"].values()]
