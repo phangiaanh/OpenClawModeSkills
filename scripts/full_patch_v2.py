@@ -58,6 +58,26 @@ function sanitizeMessageButtons(args) {
     const r = Object.assign({}, args);
     if (hb) r.buttons = args.buttons.map(sanitizeRow);
     if (hi) r.inline_keyboard = args.inline_keyboard.map(sanitizeRow);
+    // Gemma sends buttons in interactive.blocks[n].buttons with {label,value,style} when buttons:[]
+    if (hb && r.buttons.length === 0 && args.interactive && Array.isArray(args.interactive.blocks)) {
+        const _flatBtns = [];
+        for (const _blk of args.interactive.blocks) {
+            if (!Array.isArray(_blk.buttons)) continue;
+            for (const _btn of _blk.buttons) {
+                if (!_btn || typeof _btn !== "object") continue;
+                const _o = {};
+                _o.text = typeof _btn.label === "string" ? _stripGemmaStr(_btn.label) : (typeof _btn.text === "string" ? _btn.text : "(button)");
+                _o.callback_data = typeof _btn.value === "string" ? _stripGemmaStr(_btn.value) : (typeof _btn.callback_data === "string" ? _btn.callback_data : "");
+                if (_btn.style) _o.style = _btn.style;
+                _flatBtns.push(_o);
+            }
+        }
+        if (_flatBtns.length > 0) {
+            const _rows = [];
+            for (let _i = 0; _i < _flatBtns.length; _i += 2) _rows.push(_flatBtns.slice(_i, _i + 2));
+            r.buttons = _rows;
+        }
+    }
     return r;
 }
 // END PATCH
@@ -316,85 +336,112 @@ else:
             except Exception as _e:
                 print(f"WARNING: could not delete JITI cache {_jiti}: {_e}")
 
-# ─── Patch 4: zernio webhook receiver (_EPAPHRAS_WEBHOOK_V1) ─────────────────────
-# Mounts POST /zernio/webhook on the runtime HTTP server: verify HMAC -> dedup ->
-# ack 200 -> shell to engine.py handle-webhook (which matches + logs). No Telegram.
-#
-# Spike result (Task 8 Step 1):
-#   Bundle: /app/dist/gateway-cli-Ce2czDuO.js
-#   Framework: raw node:http createServer -> delegates to async function handleRequest(req, res)
-#   Anchor: "async function handleRequest(req, res) {" (appears exactly once)
-#   Available in scope: fs (node:fs), crypto (node:crypto), spawnSync (node:child_process)
-#   No __require() — this is an ESM bundle; use module-scope imports directly.
-import glob as _g4
-WH_MARKER = '_EPAPHRAS_WEBHOOK_V1'
-RECV_BUNDLE_GLOB = '/app/dist/gateway-cli-*.js'
-_recv_matches = _g4.glob(RECV_BUNDLE_GLOB)
-if not _recv_matches:
-    print("WARNING: receiver bundle not found — skipping Patch 4")
+# ─── Patch 4: hourly poll timer (_EPAPHRAS_POLL_V1) ─────────────────────────────
+# Injects a setInterval into the gateway process that shells out to engine.py poll
+# once per hour. The engine enforces the 08:00–20:00 ICT window itself.
+POLL_MARKER = '_EPAPHRAS_POLL_V1'
+
+# Reload EMBEDDED (it was already written by Patch 3)
+with open(EMBEDDED, 'r') as f:
+    _psrc = f.read()
+
+if POLL_MARKER in _psrc:
+    print(f"pi-embedded already patched ({POLL_MARKER}) — skipping")
 else:
-    RECV_FILE = _recv_matches[0]
-    with open(RECV_FILE, 'r') as f:
-        rsrc = f.read()
-    if WH_MARKER in rsrc:
-        print(f"receiver already patched ({WH_MARKER}) — skipping")
+    POLL_ANCHOR = '\tbot.use(botRuntime.sequentialize(getTelegramSequentialKey));'
+    if POLL_ANCHOR not in _psrc:
+        POLL_ANCHOR = 'registerTelegramHandlers({'
+        if POLL_ANCHOR not in _psrc:
+            print("WARNING: no injection anchor for poll timer — skipping Patch 4")
+            POLL_ANCHOR = None
+    if POLL_ANCHOR:
+        _poll_anchor_pos = _psrc.index(POLL_ANCHOR)
+        _SKILL_DIR = ENGINE_PATH.rsplit('/', 1)[0]
+        INJECT_POLL = (
+            '// PATCH: ' + POLL_MARKER + ' — hourly poll timer\n'
+            '(function _registerEpaphrasPoll() {\n'
+            '  if (globalThis.__epaphrasPollV1) return;\n'
+            '  globalThis.__epaphrasPollV1 = true;\n'
+            '  const { spawn } = __require("child_process");\n'
+            '  const SKILL_DIR = process.env.EPAPHRAS_SKILL_DIR || "' + _SKILL_DIR + '";\n'
+            '  const INTERVAL_MS = 60 * 60 * 1000;\n'
+            '  function tick() {\n'
+            '    const p = spawn("python3", [SKILL_DIR + "/engine.py", "poll"],\n'
+            '                    { cwd: SKILL_DIR, env: process.env });\n'
+            '    let out = "";\n'
+            '    p.stdout.on("data", (d) => (out += d));\n'
+            '    p.on("close", () => { try { console.log("[epaphras poll]", out.trim()); } catch (e) {} });\n'
+            '  }\n'
+            '  setInterval(tick, INTERVAL_MS);\n'
+            '})();\n'
+            '// END PATCH: ' + POLL_MARKER + '\n'
+        )
+        _psrc = _psrc[:_poll_anchor_pos] + INJECT_POLL + _psrc[_poll_anchor_pos:]
+        with open(EMBEDDED, 'w') as f:
+            f.write(_psrc)
+        print(f"Patched pi-embedded with {POLL_MARKER}")
+
+# ─── Patch 5: cb_* intercept in bot-handlers.runtime.ts (_EPAPHRAS_CB_INTERCEPT_TS) ─
+# The Telegram callback handler is loaded via JITI from the TS source at
+# /app/extensions/telegram/src/bot-handlers.runtime.ts — NOT from the compiled JS
+# bundle. We inject spawnSync("python3", engine, "handle-callback") right after the
+# early-return guard, so cb_* callbacks edit the panel directly without hitting the LLM.
+TS_TARGET = '/app/extensions/telegram/src/bot-handlers.runtime.ts'
+TS_MARKER = '_EPAPHRAS_CB_INTERCEPT_TS'
+TS_END_MARKER = '// END PATCH: _EPAPHRAS_CB_INTERCEPT_TS'
+TS_INJECT_AFTER = '      if (!data || !callbackMessage) {\n        return;\n      }\n'
+
+import os as _os5
+if not _os5.path.exists(TS_TARGET):
+    print(f"WARNING: {TS_TARGET} not found — skipping Patch 5 (TS cb intercept)")
+else:
+    with open(TS_TARGET) as _f5:
+        _ts_src = _f5.read()
+
+    # Remove existing patch if present (idempotent)
+    if TS_MARKER in _ts_src:
+        _ts_si = _ts_src.find('// PATCH: ' + TS_MARKER)
+        _ts_ei = _ts_src.find(TS_END_MARKER)
+        if _ts_si >= 0 and _ts_ei >= 0:
+            _old_block = _ts_src[_ts_si:_ts_ei + len(TS_END_MARKER) + 1]
+            _ts_src = _ts_src.replace(_old_block, '', 1)
+
+    if TS_INJECT_AFTER not in _ts_src:
+        print(f"WARNING: TS inject anchor not found in {TS_TARGET} — skipping Patch 5")
     else:
-        # Anchor: top of handleRequest, which is the single request dispatcher for the
-        # node:http createServer. Inject our webhook route before the websocket check so
-        # it is the very first thing evaluated for every incoming request.
-        # This anchor was verified unique (count=1) in the live pod bundle.
-        RECV_ANCHOR = 'async function handleRequest(req, res) {'
-        if RECV_ANCHOR not in rsrc:
-            print("WARNING: receiver HTTP anchor not found — skipping Patch 4 "
-                  "(re-run the Task 8 spike and update RECV_ANCHOR)")
-        else:
-            # The gateway-cli bundle uses top-level ESM imports, so fs, crypto and
-            # spawnSync are already in scope — no require() or __require() needed.
-            INJECT = (
-                'async function handleRequest(req, res) {\n'
-                '// PATCH: ' + WH_MARKER + '\n'
-                'if (req.method === "POST" && (req.url || "").split("?")[0] === "/zernio/webhook") {\n'
-                '  const _ENGINE = "' + ENGINE_PATH + '";\n'
-                '  const _MODES = process.env.EPAPHRAS_MODES_FILE || "' + MODES_PATH + '";\n'
-                '  const _chunks = [];\n'
-                '  req.on("data", (c) => _chunks.push(c));\n'
-                '  req.on("end", () => {\n'
-                '    try {\n'
-                '      const _raw = Buffer.concat(_chunks);\n'
-                '      let _secret = null, _eid = req.headers["x-zernio-event-id"];\n'
-                '      try { _secret = JSON.parse(fs.readFileSync(_MODES, "utf8")).webhook?.secret || null; } catch (_) {}\n'
-                '      if (!_secret) { res.writeHead(401); res.end("no secret"); return; }\n'
-                '      const _sig = req.headers["x-zernio-signature"] || "";\n'
-                '      const _calc = crypto.createHmac("sha256", _secret).update(_raw).digest("hex");\n'
-                '      const _a = Buffer.from(_calc), _b = Buffer.from(String(_sig));\n'
-                '      if (_a.length !== _b.length || !crypto.timingSafeEqual(_a, _b)) {\n'
-                '        res.writeHead(401); res.end("bad signature"); return;\n'
-                '      }\n'
-                '      globalThis.__epaphrasSeen = globalThis.__epaphrasSeen || new Set();\n'
-                '      const _seen = globalThis.__epaphrasSeen;\n'
-                '      if (_eid && _seen.has(_eid)) { res.writeHead(200); res.end("dup"); return; }\n'
-                '      if (_eid) { _seen.add(_eid); if (_seen.size > 1000) _seen.delete(_seen.values().next().value); }\n'
-                '      res.writeHead(200); res.end("ok");  // ack before processing (5s budget)\n'
-                '      try {\n'
-                '        spawnSync("python3", [_ENGINE, "handle-webhook", _raw.toString("utf8")], { timeout: 8000 });\n'
-                '      } catch (_pe) {\n'
-                '        try { fs.appendFileSync("/tmp/wh_err.log", String(_pe) + "\\n"); } catch (_) {}\n'
-                '      }\n'
-                '    } catch (_e) {\n'
-                '      try { res.writeHead(500); res.end("err"); } catch (_) {}\n'
-                '    }\n'
-                '  });\n'
-                '  return;\n'
-                '}\n'
-                '// END PATCH: ' + WH_MARKER + '\n'
-            )
-            rsrc = rsrc.replace(RECV_ANCHOR, INJECT, 1)
-            with open(RECV_FILE, 'w') as f:
-                f.write(rsrc)
-            print(f"Patched receiver with {WH_MARKER}")
-            import os as _os4
-            for _jiti in _g4.glob('/tmp/jiti/dist-gateway-cli-*.cjs'):
-                try:
-                    _os4.remove(_jiti); print(f"Deleted JITI cache: {_jiti}")
-                except Exception as _e:
-                    print(f"WARNING: could not delete JITI cache {_jiti}: {_e}")
+        _TS_INTERCEPT = (
+            '      // PATCH: ' + TS_MARKER + '\n'
+            '      try {\n'
+            '        // eslint-disable-next-line @typescript-eslint/no-require-imports\n'
+            '        const _epCp: any = require("node:child_process");\n'
+            '        if (data.startsWith("cb_")) {\n'
+            '          const _epProc = _epCp.spawnSync("python3", [\n'
+            '            "' + ENGINE_PATH + '",\n'
+            '            "handle-callback", data\n'
+            '          ], { encoding: "utf-8", timeout: 10000 });\n'
+            '          if (_epProc.status === 0 && _epProc.stdout) {\n'
+            '            const _epOut = JSON.parse((_epProc.stdout as string).trim());\n'
+            '            if (_epOut && !_epOut.error && _epOut.text) {\n'
+            '              const _epKb: any = _epOut.buttons ? { reply_markup: { inline_keyboard: _epOut.buttons } } : {};\n'
+            '              try {\n'
+            '                await bot.api.editMessageText(callbackMessage.chat.id, callbackMessage.message_id, _epOut.text as string, _epKb);\n'
+            '              } catch (_epSe: unknown) {\n'
+            '                try { await bot.api.sendMessage(callbackMessage.chat.id, _epOut.text as string, _epKb); } catch (_epM: unknown) { void _epM; }\n'
+            '              }\n'
+            '              return;\n'
+            '            }\n'
+            '          }\n'
+            '        }\n'
+            '      } catch (_epErr: unknown) { void _epErr; }\n'
+            '      ' + TS_END_MARKER + '\n'
+        )
+        _ts_src = _ts_src.replace(TS_INJECT_AFTER, TS_INJECT_AFTER + _TS_INTERCEPT, 1)
+        with open(TS_TARGET, 'w') as _f5w:
+            _f5w.write(_ts_src)
+        print(f"Patched {TS_TARGET} with {TS_MARKER}")
+        import glob as _g5
+        for _jiti5 in _g5.glob('/tmp/jiti/src-bot-handlers.runtime.*.cjs'):
+            try:
+                _os5.remove(_jiti5); print(f"Deleted JITI cache: {_jiti5}")
+            except Exception as _e5:
+                print(f"WARNING: could not delete JITI TS cache {_jiti5}: {_e5}")
