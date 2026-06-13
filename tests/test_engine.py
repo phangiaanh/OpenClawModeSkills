@@ -1219,3 +1219,28 @@ def test_cli_poll_lock_blocks_second_run(cfg, monkeypatch):
         assert rc == 0 and out["reason"] == "locked"
     finally:
         lock.unlink(missing_ok=True)
+
+
+def test_render_modes_shows_polling_off_by_default(cfg):
+    data = engine.load_config(cfg)
+    engine.poll_config(data)["enabled"] = False      # explicitly off
+    flat = [b for row in engine.render_modes(data)["buttons"] for b in row]
+    poll_btn = next(b for b in flat if b["callback_data"] == "cb_notif")
+    assert "📡" in poll_btn["text"] and "Off" in poll_btn["text"]
+
+
+def test_render_modes_shows_polling_on_when_enabled(cfg):
+    data = engine.load_config(cfg)
+    engine.poll_config(data)["enabled"] = True
+    flat = [b for row in engine.render_modes(data)["buttons"] for b in row]
+    poll_btn = next(b for b in flat if b["callback_data"] == "cb_notif")
+    assert "On" in poll_btn["text"]
+
+
+def test_cb_notif_toggles_poll_enabled(cfg):
+    data = engine.load_config(cfg)
+    engine.poll_config(data)["enabled"] = False
+    engine.handle_callback(data, "cb_notif")
+    assert engine.poll_config(data)["enabled"] is True
+    engine.handle_callback(data, "cb_notif")
+    assert engine.poll_config(data)["enabled"] is False
