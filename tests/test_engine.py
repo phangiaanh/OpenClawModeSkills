@@ -458,19 +458,6 @@ def test_cli_handle_callback_unknown_error_envelope(cfg):
 
 
 
-def test_default_template_uses_object_platforms_and_idle_wizard():
-    import json as _j
-    tmpl = _j.loads((Path(__file__).parent.parent / "templates" / "modes.default.json").read_text())
-    assert tmpl["wizard"]["step"] == "idle"
-    for mode in tmpl["modes"].values():
-        for p in mode["platforms"]:
-            assert isinstance(p, dict) and "platform" in p
-    # object platforms still render via render_topics
-    first_id = next(iter(tmpl["modes"]))
-    out = engine.render_topics(tmpl, first_id)
-    assert "Platforms:" in out["text"]
-
-
 
 import socialcrawl
 
@@ -895,3 +882,20 @@ def test_create_mode_requires_a_platform():
     engine.create_mode(data)                         # none picked
     assert data["wizard"]["step"] == "pick_platforms"
     assert "Empty" not in [m.get("name") for m in data["modes"].values()]
+
+
+def test_default_template_is_single_mode_with_poll_block():
+    tmpl = _json.loads(
+        (Path(__file__).parent.parent / "templates" / "modes.default.json").read_text())
+    assert list(tmpl["modes"]) == ["culture_drama"]
+    mode = tmpl["modes"]["culture_drama"]
+    assert mode["platforms"] == ["threads", "tiktok", "reddit"]
+    assert set(mode["topics"]) == {"esports", "showbiz", "music", "art", "technology"}
+    assert mode["topics"]["showbiz"]["query"] == "celebrity"
+    assert mode["topics"]["art"]["active"] is False
+    assert tmpl["poll"]["interval_minutes"] == 60
+    assert tmpl["poll"]["window"]["tz"] == "Asia/Ho_Chi_Minh"
+    assert "webhook" not in tmpl
+    # the seeded template renders cleanly
+    out = engine.render_topics(tmpl, "culture_drama")
+    assert "Platforms:" in out["text"]

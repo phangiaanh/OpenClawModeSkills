@@ -1,50 +1,30 @@
 {
   "current_active_mode": "culture_drama",
   "wizard": { "step": "idle" },
-  "webhook": { "enabled": false, "id": null, "secret": null, "url": null, "events": [], "synced_at": null },
+  "poll": {
+    "enabled": true,
+    "interval_minutes": 60,
+    "window": { "start": "08:00", "end": "20:00", "tz": "Asia/Ho_Chi_Minh" },
+    "lookback": "24h",
+    "top_n_per_platform_topic": 3,
+    "score": { "w_like": 1, "w_comment": 2, "w_share": 2, "w_reach": 1, "beta": 0.6, "gravity": 1.5 },
+    "floors": {
+      "tiktok": { "views": 100000, "likes": 10000 },
+      "reddit": { "likes": 500 },
+      "threads": { "likes": 500 }
+    }
+  },
   "modes": {
-    "deep_research": {
-      "name": "Research & Deep Dive",
-      "icon": "📚",
-      "platforms": [{ "platform": "linkedin" }, { "platform": "reddit" }],
-      "topics": {
-        "academic_papers": { "label": "Academic Papers", "active": true },
-        "tech_forums": { "label": "Technical Forums", "active": false },
-        "ai_ml_arch": { "label": "AI/ML Architecture", "active": true },
-        "community_sentiment": { "label": "Community Sentiment", "active": false }
-      }
-    },
     "culture_drama": {
       "name": "Drama & Cultural Pulse",
       "icon": "🎭",
-      "platforms": [{ "platform": "tiktok" }, { "platform": "threads" }],
+      "platforms": ["threads", "tiktok", "reddit"],
       "topics": {
-        "esports": { "label": "Esports Drama", "active": true },
-        "vtuber_gossip": { "label": "Vtuber/Streamer Gossip", "active": true },
-        "viral_memes": { "label": "Viral Memes", "active": false },
-        "cancel_culture": { "label": "Cancel Culture", "active": false }
-      }
-    },
-    "global_news": {
-      "name": "Breaking News & Global Alert",
-      "icon": "🚨",
-      "platforms": [{ "platform": "x" }, { "platform": "threads" }],
-      "topics": {
-        "geopolitics": { "label": "Geopolitical Crises", "active": false },
-        "market_meltdown": { "label": "Market Meltdowns", "active": true },
-        "tech_breakouts": { "label": "Tech Breakouts", "active": true },
-        "disasters": { "label": "Weather Disasters", "active": false }
-      }
-    },
-    "venture_intel": {
-      "name": "Venture & Market Intelligence",
-      "icon": "💼",
-      "platforms": [{ "platform": "linkedin" }, { "platform": "instagram" }],
-      "topics": {
-        "vc_funding": { "label": "VC Funding Drops", "active": false },
-        "stealth_hires": { "label": "Stealth Engineering Waves", "active": false },
-        "ph_launches": { "label": "Product Hunt Launches", "active": true },
-        "exec_migration": { "label": "Executive Migrations", "active": false }
+        "esports":    { "label": "Esports",    "query": "esports",    "active": true },
+        "showbiz":    { "label": "Showbiz",    "query": "celebrity",  "active": true },
+        "music":      { "label": "Music",      "query": "music",      "active": true },
+        "art":        { "label": "Art",        "query": "art",        "active": false },
+        "technology": { "label": "Technology", "query": "technology", "active": true }
       }
     }
   }

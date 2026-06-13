@@ -1,7 +1,9 @@
 modes.json
 *.bak
 *.tmp
-webhook_events.jsonl
+trending_posts.jsonl
+poll_state.json
+poll.lock
 __pycache__/
 *.pyc
 .pytest_cache/
