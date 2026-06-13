@@ -1,5 +1,6 @@
 """Epaphras Modes engine: modes.json IO, mutation, and Telegram payload rendering."""
 import ast
+import copy
 import json
 import os
 import re
@@ -10,7 +11,11 @@ import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from datetime import time as _time
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import socialcrawl
 
 DEFAULT_TEMPLATE = Path(__file__).parent / "templates" / "modes.default.json"
 DEFAULT_FILE = Path(__file__).parent / "modes.json"
@@ -45,6 +50,19 @@ def gen_id(existing, base):
     while f"{base}_{n}" in existing:
         n += 1
     return f"{base}_{n}"
+
+
+def topic_query(topic):
+    """The string sent to SocialCrawl for a topic: its `query`, else its label."""
+    return topic.get("query") or topic.get("label", "")
+
+
+def raw_engagement(record, weights):
+    """Weighted raw engagement for one unified record."""
+    return (weights["w_like"] * record.get("likes", 0)
+            + weights["w_comment"] * record.get("comments", 0)
+            + weights["w_share"] * record.get("shares", 0)
+            + weights["w_reach"] * record.get("reach", 0))
 
 
 def get_wizard(data):

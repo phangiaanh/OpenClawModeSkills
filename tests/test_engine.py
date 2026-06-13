@@ -955,3 +955,15 @@ def test_search_adapter_returns_records_and_credits(monkeypatch):
 
 def test_search_adapters_capability_map_keys():
     assert set(socialcrawl.SEARCH_ADAPTERS) == {"threads", "tiktok", "reddit"}
+
+
+def test_topic_query_prefers_query_then_label():
+    assert engine.topic_query({"label": "Art", "query": "digital art"}) == "digital art"
+    assert engine.topic_query({"label": "Esports"}) == "Esports"
+
+
+def test_raw_engagement_weights_comments_and_shares():
+    rec = {"likes": 100, "comments": 10, "shares": 5, "reach": 1000}
+    w = {"w_like": 1, "w_comment": 2, "w_share": 2, "w_reach": 1}
+    # 100*1 + 10*2 + 5*2 + 1000*1 = 1130
+    assert engine.raw_engagement(rec, w) == 1130
