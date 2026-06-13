@@ -1051,3 +1051,33 @@ def test_save_then_load_state_roundtrips(tmp_path):
     p = tmp_path / "state.json"
     engine.save_state(p, {"posts": {"x:1": {"last_raw": 5}}})
     assert engine.load_state(p)["posts"]["x:1"]["last_raw"] == 5
+
+
+def test_poll_config_installs_defaults():
+    data = {"modes": {}}
+    pc = engine.poll_config(data)
+    assert pc["interval_minutes"] == 60
+    assert pc["top_n_per_platform_topic"] == 3
+    assert pc["window"]["tz"] == "Asia/Ho_Chi_Minh"
+    assert data["poll"] is pc                       # installed onto data
+    # defaults are independent copies, not the shared module constant
+    pc["interval_minutes"] = 5
+    assert engine.DEFAULT_POLL["interval_minutes"] == 60
+
+
+def test_in_window_respects_local_time():
+    win = {"start": "08:00", "end": "20:00", "tz": "Asia/Ho_Chi_Minh"}  # UTC+7
+    # 02:00 UTC == 09:00 ICT -> inside
+    assert engine.in_window(datetime(2026, 6, 13, 2, 0, tzinfo=timezone.utc), win) is True
+    # 14:00 UTC == 21:00 ICT -> outside
+    assert engine.in_window(datetime(2026, 6, 13, 14, 0, tzinfo=timezone.utc), win) is False
+
+
+def test_poll_gate_blocks_disabled_and_no_mode():
+    now = datetime(2026, 6, 13, 2, 0, tzinfo=timezone.utc)   # 09:00 ICT, inside window
+    data = {"modes": {}, "poll": {"enabled": False,
+            "window": {"start": "08:00", "end": "20:00", "tz": "Asia/Ho_Chi_Minh"}}}
+    assert engine.poll_gate(data, now)["reason"] == "disabled"
+    data["poll"]["enabled"] = True
+    data["current_active_mode"] = None
+    assert engine.poll_gate(data, now)["reason"] == "no active mode"

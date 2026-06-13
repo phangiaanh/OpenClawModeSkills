@@ -20,6 +20,18 @@ import socialcrawl
 DEFAULT_TEMPLATE = Path(__file__).parent / "templates" / "modes.default.json"
 DEFAULT_FILE = Path(__file__).parent / "modes.json"
 
+DEFAULT_POLL = {
+    "enabled": True,
+    "interval_minutes": 60,
+    "window": {"start": "08:00", "end": "20:00", "tz": "Asia/Ho_Chi_Minh"},
+    "lookback": "24h",
+    "top_n_per_platform_topic": 3,
+    "score": {"w_like": 1, "w_comment": 2, "w_share": 2, "w_reach": 1,
+              "beta": 0.6, "gravity": 1.5},
+    "floors": {"tiktok": {"views": 100000, "likes": 10000},
+               "reddit": {"likes": 500},
+               "threads": {"likes": 500}},
+}
 
 PLATFORM_EMOJI = {
     "threads": "🧵", "tiktok": "🎵", "x": "✖️", "twitter": "✖️",
@@ -153,6 +165,35 @@ def age_out_state(state, now, max_age_hours=24):
     for key in [k for k, e in posts.items()
                 if _hours_since(e.get("last_seen"), now) > max_age_hours]:
         del posts[key]
+
+
+def poll_config(data):
+    if "poll" not in data:
+        data["poll"] = copy.deepcopy(DEFAULT_POLL)
+    return data["poll"]
+
+
+def _parse_hhmm(s):
+    h, m = s.split(":")
+    return _time(int(h), int(m))
+
+
+def in_window(now, window):
+    tz = ZoneInfo(window.get("tz", "UTC"))
+    local = now.astimezone(tz).time()
+    return _parse_hhmm(window["start"]) <= local <= _parse_hhmm(window["end"])
+
+
+def poll_gate(data, now):
+    """Return a skip dict if polling should not run now, else None."""
+    pcfg = poll_config(data)
+    if not pcfg.get("enabled", True):
+        return {"skipped": True, "reason": "disabled"}
+    if not in_window(now, pcfg["window"]):
+        return {"skipped": True, "reason": "outside window"}
+    if not data.get("modes", {}).get(data.get("current_active_mode")):
+        return {"skipped": True, "reason": "no active mode"}
+    return None
 
 
 def get_wizard(data):
