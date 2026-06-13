@@ -1012,3 +1012,42 @@ def test_hours_since_parses_iso_and_z():
     assert engine._hours_since("2026-06-13T10:00:00+00:00", now) == 2.0
     assert engine._hours_since("2026-06-13T10:00:00Z", now) == 2.0
     assert engine._hours_since(None, now) == 0.0      # missing -> 0
+
+
+def test_load_state_missing_returns_empty(tmp_path):
+    assert engine.load_state(tmp_path / "nope.json") == {"posts": {}}
+
+
+def test_load_state_corrupt_returns_empty(tmp_path):
+    p = tmp_path / "state.json"
+    p.write_text("{not json")
+    assert engine.load_state(p) == {"posts": {}}
+
+
+def test_update_state_inserts_then_tracks_peak():
+    state = {"posts": {}}
+    now = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
+    e1 = engine.update_state(state, "tiktok:1", 500, now, 0.4, "esports")
+    assert e1["first_seen"] == now.isoformat() and e1["last_raw"] == 500
+    later = datetime(2026, 6, 13, 13, 0, tzinfo=timezone.utc)
+    e2 = engine.update_state(state, "tiktok:1", 900, later, 0.2, "esports")
+    assert e2["first_seen"] == now.isoformat()       # unchanged
+    assert e2["last_raw"] == 900
+    assert e2["peak_score"] == 0.4                    # max kept
+
+
+def test_age_out_state_drops_stale_entries():
+    now = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
+    state = {"posts": {
+        "tiktok:fresh": {"last_seen": "2026-06-13T11:00:00+00:00"},
+        "tiktok:stale": {"last_seen": "2026-06-11T11:00:00+00:00"},
+    }}
+    engine.age_out_state(state, now, max_age_hours=24)
+    assert "tiktok:fresh" in state["posts"]
+    assert "tiktok:stale" not in state["posts"]
+
+
+def test_save_then_load_state_roundtrips(tmp_path):
+    p = tmp_path / "state.json"
+    engine.save_state(p, {"posts": {"x:1": {"last_raw": 5}}})
+    assert engine.load_state(p)["posts"]["x:1"]["last_raw"] == 5

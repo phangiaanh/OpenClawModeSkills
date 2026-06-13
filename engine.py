@@ -115,6 +115,46 @@ def _hours_since(iso_str, now):
     return max(0.0, (now - ts).total_seconds() / 3600.0)
 
 
+def load_state(path):
+    """Load the poll state store; empty/corrupt -> a fresh empty store."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {"posts": {}}
+    data.setdefault("posts", {})
+    return data
+
+
+def save_state(path, state):
+    path = Path(path)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False)
+    tmp.replace(path)
+
+
+def update_state(state, key, raw, now, score, topic):
+    """Insert or refresh a tracked post; keep first_seen and peak_score."""
+    posts = state.setdefault("posts", {})
+    nowiso = now.isoformat()
+    entry = posts.get(key)
+    if entry is None:
+        entry = {"first_seen": nowiso, "topic": topic, "peak_score": score}
+        posts[key] = entry
+    entry["last_seen"] = nowiso
+    entry["last_raw"] = raw
+    entry["peak_score"] = max(entry.get("peak_score", 0.0), score)
+    return entry
+
+
+def age_out_state(state, now, max_age_hours=24):
+    posts = state.get("posts", {})
+    for key in [k for k, e in posts.items()
+                if _hours_since(e.get("last_seen"), now) > max_age_hours]:
+        del posts[key]
+
+
 def get_wizard(data):
     return data.setdefault("wizard", {"step": "idle"})
 
