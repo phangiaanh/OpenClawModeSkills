@@ -13,12 +13,10 @@ Requires only Python 3 standard library — no pip or external packages needed.
 3. (Optional) Set `EPAPHRAS_MODES_FILE` to choose where `modes.json` lives.
    Default: alongside `engine.py`. The file is seeded from
    `templates/modes.default.json` on first use.
-4. The platform picker calls the zernio MCP gateway (token embedded in the gateway URL);
-   no extra env vars required.
-5. (Optional) Tap **🔔 Notifications** in the panel to register the zernio webhook.
-   Filter decisions are logged to `webhook_events.jsonl` (configurable via
-   `EPAPHRAS_WEBHOOK_LOG`). Set `EPAPHRAS_PUBLIC_URL` to override the default public
-   base URL; Telegram delivery of matches is not yet implemented.
+4. Set `SOCIALCRAWL_API_KEY` env var to your SocialCrawl key (`sc_...`).
+5. (Optional) Tap **📡 Polling** in the panel to enable hourly windowed polling.
+   Discoveries are appended to `trending_posts.jsonl` (configurable via
+   `EPAPHRAS_POLL_LOG`). Telegram delivery of matches is not yet implemented.
 
 ## Usage
 
@@ -33,6 +31,7 @@ python3 engine.py render-modes
 python3 engine.py render-topics --mode deep_research
 python3 engine.py setmode global_news
 python3 engine.py toggle market_meltdown
+python3 engine.py poll
 ```
 
 ## Tests

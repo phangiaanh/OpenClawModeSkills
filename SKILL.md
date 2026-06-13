@@ -26,6 +26,7 @@ python3 <skill_dir>/engine.py <command> [arg] [--mode <id>]
 | `handle-text <text>` | Wizard text step; no-op if wizard idle |
 | `store-msgid <id>` | Persist the panel message ID |
 | `get-msgid` | Return `{"message_id": <id>}` |
+| `poll` | Run one poll tick (scores + logs) |
 
 ## Opening the panel (`/epaphras`)
 
@@ -65,11 +66,11 @@ python3 <skill_dir>/engine.py store-msgid <messageId>
 | `cb_deltopic:<mid>:<tid>` | confirm-delete topic |
 | `cb_confirmdel:<...>` | perform delete |
 | `cb_cancel` | cancel / reset wizard |
-| `cb_notif` | toggle zernio webhook on/off |
+| `cb_notif` | toggle polling on/off |
 
 ## Wizard flows
 
-**New mode:** ➕ New mode → type a name → pick ≤2 platforms (live from zernio) → ✅ Create.
+**New mode:** ➕ New mode → type a name → pick searchable platforms (Threads / TikTok / Reddit) → ✅ Create.
 
 **Add topic:** ➕ Add topic → type a topic name → topic added (active by default).
 
@@ -81,37 +82,28 @@ python3 <skill_dir>/engine.py store-msgid <messageId>
 
 If the engine exits non-zero, send `⚠️ <error>` as plain text.
 
-## Notifications (zernio webhook)
+## Polling
 
-Screen 1 shows **🔔 Notifications: On/Off**. Tapping it creates (On) or deletes (Off)
-a zernio webhook via the MCP gateway, subscribing to inbound-engagement events
-(`comment.received`, `message.received`, `reaction.received`, `review.new`,
-`lead.received`, `conversation.started`).
+Screen 1 shows **📡 Polling: On/Off**. Tapping it toggles `poll.enabled` in `modes.json`.
 
-Zernio delivers events to `POST {EPAPHRAS_PUBLIC_URL}/zernio/webhook` on the OpenClaw
-runtime (mounted by the gateway patch). The receiver verifies the `X-Zernio-Signature`
-HMAC, dedups on `X-Zernio-Event-Id`, acks `200`, then runs
-`engine.py handle-webhook <payload>`, which matches the event against the **active
-mode's** platforms and active topic labels and appends one JSON line per delivery to
-`EPAPHRAS_WEBHOOK_LOG` (default `webhook_events.jsonl`). Pushing matches to Telegram is
-not done yet — review the log file.
+An hourly timer (08:00–20:00 ICT, configurable) in the gateway patch shells out to
+`engine.py poll`, which:
+1. Checks the active mode's active topics
+2. Searches each topic across Threads, TikTok, and Reddit via the SocialCrawl API
+3. Scores results with a local trend score (magnitude × velocity × recency decay)
+4. Filters by absolute per-platform engagement floors
+5. Appends the top-3 posts per (topic × platform) to `trending_posts.jsonl`
 
-Topic/mode/platform edits take effect on the *next* delivery with no zernio call (the
-receiver reads `modes.json` live); a best-effort `webhook-sync` after each change
-re-creates the webhook if it was deleted externally.
+Trajectory re-logging: the same post is re-logged each poll while it stays in the top-N,
+capturing `hours_trending` and velocity (Δengagement/hour) for wave monitoring.
 
 ### Env vars
-- `EPAPHRAS_MCP_GATEWAY_URL` — zernio MCP gateway (default: this deployment's gateway).
-- `EPAPHRAS_PUBLIC_URL` — public base URL of the runtime; the receiver path
-  `/zernio/webhook` is appended. Defaults to this deployment's public URL.
-- `EPAPHRAS_WEBHOOK_LOG` — filter-decision log path (default `webhook_events.jsonl`).
-
-### Engine commands
-`webhook-status`, `webhook-enable`, `webhook-disable`, `webhook-sync`,
-`handle-webhook <payload-json>`.
+- `SOCIALCRAWL_API_KEY` (required) — SocialCrawl API key (`sc_...`).
+- `EPAPHRAS_POLL_LOG` — log path (default `trending_posts.jsonl` next to `engine.py`).
+- `EPAPHRAS_MODES_FILE` — override `modes.json` location (default: alongside `engine.py`).
 
 ## Notes
 
 - `modes.json` is the single source of truth; the engine writes a `.bak` before each save.
-- The platform picker fetches accounts via the zernio MCP gateway (no env token required).
+- The platform picker shows Threads, TikTok, and Reddit from the built-in capability map.
 - `EPAPHRAS_MODES_FILE` env var overrides the default `modes.json` location.
