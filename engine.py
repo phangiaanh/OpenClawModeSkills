@@ -65,6 +65,36 @@ def raw_engagement(record, weights):
             + weights["w_reach"] * record.get("reach", 0))
 
 
+def platform_baseline(raws):
+    """Median of a platform's raw-engagement batch; never returns 0."""
+    vals = sorted(v for v in raws if v is not None)
+    if not vals:
+        return 1.0
+    n = len(vals)
+    mid = n // 2
+    med = vals[mid] if n % 2 else (vals[mid - 1] + vals[mid]) / 2
+    return med or 1.0
+
+
+def magnitude(raw, baseline):
+    return raw / baseline if baseline else raw
+
+
+def velocity(raw_now, last_raw, dhours):
+    """Non-negative engagement-gain rate since the last sighting."""
+    if not dhours or dhours <= 0:
+        return 0.0
+    return max(0.0, (raw_now - last_raw) / dhours)
+
+
+def recency(age_hours, gravity):
+    return 1.0 / (age_hours + 2.0) ** gravity
+
+
+def trend_score(magnitude_val, velocity_norm, beta, recency_factor):
+    return (beta * magnitude_val + (1 - beta) * velocity_norm) * recency_factor
+
+
 def get_wizard(data):
     return data.setdefault("wizard", {"step": "idle"})
 

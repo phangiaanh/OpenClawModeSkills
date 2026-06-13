@@ -967,3 +967,32 @@ def test_raw_engagement_weights_comments_and_shares():
     w = {"w_like": 1, "w_comment": 2, "w_share": 2, "w_reach": 1}
     # 100*1 + 10*2 + 5*2 + 1000*1 = 1130
     assert engine.raw_engagement(rec, w) == 1130
+
+
+def test_platform_baseline_is_median_with_guard():
+    assert engine.platform_baseline([10, 20, 30]) == 20
+    assert engine.platform_baseline([10, 20, 30, 40]) == 25
+    assert engine.platform_baseline([]) == 1.0       # empty guard
+    assert engine.platform_baseline([0, 0]) == 1.0    # zero-median guard
+
+
+def test_magnitude_divides_by_baseline():
+    assert engine.magnitude(100, 20) == 5.0
+    assert engine.magnitude(100, 0) == 100            # baseline 0 -> raw
+
+
+def test_velocity_is_clamped_nonnegative_rate():
+    assert engine.velocity(300, 100, 2.0) == 100.0    # (300-100)/2
+    assert engine.velocity(50, 100, 2.0) == 0.0       # falling -> 0
+    assert engine.velocity(300, 100, 0) == 0.0        # no elapsed time -> 0
+
+
+def test_recency_decays_with_age():
+    fresh = engine.recency(0, 1.5)
+    old = engine.recency(48, 1.5)
+    assert fresh > old > 0
+
+
+def test_trend_score_blends_magnitude_and_velocity():
+    # (0.6*10 + 0.4*5) * 1.0 = 8.0
+    assert engine.trend_score(10, 5, 0.6, 1.0) == 8.0
