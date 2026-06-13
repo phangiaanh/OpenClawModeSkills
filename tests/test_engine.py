@@ -868,3 +868,49 @@ def test_maybe_sync_skips_when_disabled(cfg, monkeypatch):
     data = engine.load_config(cfg)
     engine._maybe_sync(data)
     assert called == []
+
+
+import socialcrawl
+
+
+def test_sc_get_parses_envelope(monkeypatch):
+    captured = {}
+
+    class FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self):
+            return (b'{"success": true, "platform": "threads", '
+                    b'"data": {"results": [{"id": "x"}]}, "credits_remaining": 940}')
+
+    def fake_urlopen(req, timeout=None, context=None):
+        captured["url"] = req.full_url
+        captured["key"] = req.headers.get("X-api-key")
+        return FakeResp()
+
+    monkeypatch.setattr(socialcrawl.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    env = socialcrawl._sc_get("/threads/search", {"query": "esports", "start_date": None})
+    assert env["credits_remaining"] == 940
+    assert env["data"]["results"] == [{"id": "x"}]
+    assert "query=esports" in captured["url"]
+    assert "start_date" not in captured["url"]   # None params dropped
+    assert captured["key"] == "sc_test"
+
+
+def test_sc_get_missing_key_raises(monkeypatch):
+    monkeypatch.delenv("SOCIALCRAWL_API_KEY", raising=False)
+    with pytest.raises(socialcrawl.SocialCrawlError, match="SOCIALCRAWL_API_KEY"):
+        socialcrawl._sc_get("/threads/search", {"query": "x"})
+
+
+def test_sc_get_unsuccessful_envelope_raises(monkeypatch):
+    class FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'{"success": false, "error": "bad query"}'
+    monkeypatch.setattr(socialcrawl.urllib.request, "urlopen",
+                        lambda req, timeout=None, context=None: FakeResp())
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    with pytest.raises(socialcrawl.SocialCrawlError, match="api error"):
+        socialcrawl._sc_get("/threads/search", {"query": "x"})
