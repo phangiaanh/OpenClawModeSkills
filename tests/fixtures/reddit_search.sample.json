@@ -2,17 +2,19 @@
   "success": true,
   "platform": "reddit",
   "data": {
-    "results": [
+    "items": [
       {
-        "id": "rd_1",
-        "url": "https://www.reddit.com/r/esports/comments/1",
-        "title": "Esports org implodes",
-        "selftext": "full breakdown of the drama",
-        "author": "redditor",
-        "subreddit": "esports",
-        "created_utc": 1749780000,
-        "score": 2400,
-        "num_comments": 540
+        "post": {
+          "id": "rd_1",
+          "url": "https://www.reddit.com/r/esports/comments/1",
+          "content": {"text": "Esports org implodes full breakdown of the drama"},
+          "author": {"username": "redditor"},
+          "engagement": {"views": null, "likes": 2400, "comments": 540,
+                         "shares": null, "saves": null},
+          "published_at": 1749780000,
+          "ext": {"subreddit": "esports"}
+        },
+        "computed": {"language": "en", "estimated_reach": null}
       }
     ]
   },

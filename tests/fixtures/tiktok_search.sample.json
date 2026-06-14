@@ -2,15 +2,18 @@
   "success": true,
   "platform": "tiktok",
   "data": {
-    "results": [
+    "items": [
       {
-        "id": "tt_1",
-        "url": "https://www.tiktok.com/@creator/video/1",
-        "description": "esports meltdown caught on stream",
-        "author": {"unique_id": "creator", "follower_count": 900000},
-        "create_time": 1749780000,
-        "stats": {"play_count": 1500000, "digg_count": 120000,
-                  "comment_count": 8000, "share_count": 30000}
+        "post": {
+          "id": "tt_1",
+          "url": "https://www.tiktok.com/@creator/video/1",
+          "content": {"text": "esports meltdown caught on stream"},
+          "author": {"username": "creator"},
+          "engagement": {"views": 1500000, "likes": 120000,
+                         "comments": 8000, "shares": 30000, "saves": 1000},
+          "published_at": 1749780000
+        },
+        "computed": {"language": "en", "estimated_reach": 1500000}
       }
     ]
   },
