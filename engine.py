@@ -237,6 +237,7 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
 
     score_cfg, floors = pcfg["score"], pcfg["floors"]
     top_n, lookback = pcfg["top_n_per_platform_topic"], pcfg["lookback"]
+    allowed_langs = set(pcfg.get("languages", ["vi", "en"]))
     state.setdefault("posts", {})
     log_lines, markers = [], []
     polled = found = logged = 0
@@ -255,6 +256,8 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
                 markers.append(f"{platform} fetch failed: {e}")
                 continue
             found += len(records)
+            records = [r for r in records
+                       if keep_language(r, allowed_langs) and not is_spam(r)]
             eligible = [r for r in records if passes_floor(r, floors.get(platform, {}))]
             if not eligible:
                 continue
@@ -328,9 +331,11 @@ def cli_poll(data):
     lock.write_text(str(os.getpid()))
     try:
         state = load_state(_state_path())
+        tiktok_region = poll_config(data).get("tiktok_region", "VN")
         summary = run_poll(
             data, now=now,
-            search_fn=lambda platform, q, lb: socialcrawl.SEARCH_ADAPTERS[platform](q, lb),
+            search_fn=lambda platform, q, lb:
+                socialcrawl.SEARCH_ADAPTERS[platform](q, lb, region=tiktok_region),
             capable_platforms=set(socialcrawl.SEARCH_ADAPTERS),
             state=state, log_path=_poll_log_path())
         save_state(_state_path(), state)

@@ -734,15 +734,15 @@ def test_run_poll_logs_top_n_per_platform_and_applies_floor(tmp_path):
     tiktok = [
         {"post_id": "tt_big", "url": "u", "text": "t", "author": {"handle": "a", "followers": 1},
          "created": "2026-06-13T01:00:00+00:00", "likes": 50000, "comments": 9000,
-         "shares": 9000, "views": 2000000, "reach": 2000000},
+         "shares": 9000, "views": 2000000, "reach": 2000000, "language": "en"},
         {"post_id": "tt_small", "url": "u", "text": "t", "author": {"handle": "b", "followers": 1},
          "created": "2026-06-13T01:00:00+00:00", "likes": 1, "comments": 1,
-         "shares": 1, "views": 10, "reach": 10},
+         "shares": 1, "views": 10, "reach": 10, "language": "en"},
     ]
     reddit = [
         {"post_id": "rd_1", "url": "u", "text": "t", "author": {"handle": "c", "followers": 0},
          "created": "2026-06-13T01:00:00+00:00", "likes": 3000, "comments": 800,
-         "shares": 0, "views": 0, "reach": 0},
+         "shares": 0, "views": 0, "reach": 0, "language": "en"},
     ]
 
     def search_fn(platform, query, lookback):
@@ -764,7 +764,7 @@ def test_run_poll_continues_when_one_platform_fails(tmp_path):
     reddit = [{"post_id": "rd_1", "url": "u", "text": "t",
                "author": {"handle": "c", "followers": 0},
                "created": "2026-06-13T01:00:00+00:00", "likes": 3000,
-               "comments": 800, "shares": 0, "views": 0, "reach": 0}]
+               "comments": 800, "shares": 0, "views": 0, "reach": 0, "language": "en"}]
 
     def search_fn(platform, query, lookback):
         if platform == "tiktok":
@@ -789,7 +789,7 @@ def test_run_poll_computes_velocity_from_state(tmp_path):
     reddit = [{"post_id": "rd_1", "url": "u", "text": "t",
                "author": {"handle": "c", "followers": 0},
                "created": "2026-06-13T01:00:00+00:00", "likes": 3000,
-               "comments": 800, "shares": 0, "views": 0, "reach": 0}]
+               "comments": 800, "shares": 0, "views": 0, "reach": 0, "language": "en"}]
     log = tmp_path / "log.jsonl"
     engine.run_poll(data, now=_now_inside(), search_fn=lambda *a: (reddit, 500),
                     capable_platforms={"reddit"}, state=state, log_path=log)
@@ -970,3 +970,48 @@ def test_default_template_has_language_and_region():
         (Path(__file__).parent.parent / "templates" / "modes.default.json").read_text())
     assert tmpl["poll"]["languages"] == ["vi", "en"]
     assert tmpl["poll"]["tiktok_region"] == "VN"
+
+
+def test_run_poll_drops_foreign_language_and_spam(tmp_path):
+    data = _poll_data()
+    data["modes"]["culture_drama"]["platforms"] = ["reddit"]
+    data["poll"]["floors"] = {"reddit": {"likes": 1}}     # let engagement through; isolate filters
+    posts = [
+        {"post_id": "keep_en", "url": "u", "text": "clean esports recap",
+         "author": {"handle": "a", "followers": 0}, "created": "2026-06-13T01:00:00+00:00",
+         "likes": 100, "comments": 1, "shares": 0, "views": 0, "reach": 0, "language": "en"},
+        {"post_id": "drop_hi", "url": "u", "text": "namaste cricket update",
+         "author": {"handle": "b", "followers": 0}, "created": "2026-06-13T01:00:00+00:00",
+         "likes": 100, "comments": 1, "shares": 0, "views": 0, "reach": 0, "language": "hi"},
+        {"post_id": "drop_spam", "url": "u", "text": "follow me @x @y @z #a #b #c #d #e",
+         "author": {"handle": "c", "followers": 0}, "created": "2026-06-13T01:00:00+00:00",
+         "likes": 100, "comments": 1, "shares": 0, "views": 0, "reach": 0, "language": "en"},
+    ]
+    log = tmp_path / "log.jsonl"
+    out = engine.run_poll(data, now=_now_inside(), search_fn=lambda *a: (posts, 500),
+                          capable_platforms={"reddit"}, state={"posts": {}}, log_path=log)
+    ids = {json.loads(l)["post_id"] for l in log.read_text().splitlines()}
+    assert ids == {"keep_en"}                 # hi dropped by language, spam dropped by is_spam
+    assert out["found"] == 3 and out["logged"] == 1
+
+
+def test_cli_poll_passes_tiktok_region_to_adapter(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    captured = {}
+    def fake_tiktok(q, lb, region=None):
+        captured["region"] = region
+        return ([], 100)
+    monkeypatch.setattr(socialcrawl, "SEARCH_ADAPTERS", {
+        "tiktok": fake_tiktok,
+        "reddit": lambda q, lb, region=None: ([], 100),
+        "threads": lambda q, lb, region=None: ([], 100),
+    })
+    monkeypatch.setattr(engine, "_state_path", lambda: tmp_path / "state.json")
+    monkeypatch.setattr(engine, "_poll_log_path", lambda: tmp_path / "log.jsonl")
+    monkeypatch.setattr(engine, "_poll_lock_path", lambda: tmp_path / "poll.lock")
+    data = _poll_data()
+    data["modes"]["culture_drama"]["platforms"] = ["tiktok"]
+    data["poll"]["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}  # always inside
+    data["poll"]["tiktok_region"] = "VN"
+    engine.cli_poll(data)
+    assert captured["region"] == "VN"
