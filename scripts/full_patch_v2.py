@@ -195,7 +195,7 @@ EMBEDDED = _matches[0]
 print(f"pi-embedded bundle: {EMBEDDED}")
 ENGINE_PATH = '/root/.openclaw/workspace/skills/OpenClawModeSkills/engine.py'
 MODES_PATH = ENGINE_PATH.replace("engine.py", "modes.json")
-MW_MARKER = '_EPAPHRAS_MW_V5'
+MW_MARKER = '_EPAPHRAS_MW_V6'
 
 with open(EMBEDDED, 'r') as f:
     esrc = f.read()
@@ -204,6 +204,7 @@ with open(EMBEDDED, 'r') as f:
 for _old_marker in (
     '_EPAPHRAS_FAST_CB_V2', '_registerEpaphrasModesCallbacks',
     '_EPAPHRAS_ESM_V3', '_EPAPHRAS_ESM_V4', '_EPAPHRAS_TEXT_V1',
+    '_EPAPHRAS_POLL_V1',
 ):
     if _old_marker in esrc:
         start_tag = f'// PATCH: {_old_marker}'
@@ -246,11 +247,15 @@ else:
             '\t\t\tconst _out = JSON.parse(_es("python3", [_ENGINE, "handle-callback", _d], { timeout: 8000 }).toString().trim());\n'
             '\t\t\tif (!_out.error) {\n'
             '\t\t\t\ttry {\n'
-            '\t\t\t\t\tawait ctx.answerCallbackQuery().catch(() => {});\n'
-            '\t\t\t\t\tconst _msg = ctx.callbackQuery.message;\n'
-            '\t\t\t\t\tconst _btns = _out.buttons || _out.inline_keyboard || [];\n'
-            '\t\t\t\t\tconst _rm = _btns.length ? { reply_markup: { inline_keyboard: _btns } } : {};\n'
-            '\t\t\t\t\tawait ctx.api.editMessageText(_msg.chat.id, _msg.message_id, _out.text || "", _rm);\n'
+            '\t\t\t\t\tif (_out.toast !== undefined) {\n'
+            '\t\t\t\t\t\tawait ctx.answerCallbackQuery({text: _out.toast || ""}).catch(() => {});\n'
+            '\t\t\t\t\t} else {\n'
+            '\t\t\t\t\t\tawait ctx.answerCallbackQuery().catch(() => {});\n'
+            '\t\t\t\t\t\tconst _msg = ctx.callbackQuery.message;\n'
+            '\t\t\t\t\t\tconst _btns = _out.buttons || _out.inline_keyboard || [];\n'
+            '\t\t\t\t\t\tconst _rm = _btns.length ? { reply_markup: { inline_keyboard: _btns } } : {};\n'
+            '\t\t\t\t\t\tawait ctx.api.editMessageText(_msg.chat.id, _msg.message_id, _out.text || "", _rm);\n'
+            '\t\t\t\t\t}\n'
             '\t\t\t\t} catch (_te) { /* swallow Telegram errors */ }\n'
             '\t\t\t\treturn; // skip next() — LLM bypassed\n'
             '\t\t\t}\n'
@@ -345,9 +350,22 @@ POLL_MARKER = '_EPAPHRAS_POLL_V1'
 with open(EMBEDDED, 'r') as f:
     _psrc = f.read()
 
+# Always strip old poll patch so we can re-inject the updated version
 if POLL_MARKER in _psrc:
-    print(f"pi-embedded already patched ({POLL_MARKER}) — skipping")
-else:
+    _ps_start = '// PATCH: ' + POLL_MARKER
+    _ps_end = '// END PATCH: ' + POLL_MARKER
+    _ps_si = _psrc.find(_ps_start)
+    if _ps_si >= 0:
+        _ps_si = _psrc.rfind('\n', 0, _ps_si) + 1
+        _ps_ei = _psrc.find(_ps_end, _ps_si)
+        if _ps_ei >= 0:
+            _ps_ei += len(_ps_end)
+            if _ps_ei < len(_psrc) and _psrc[_ps_ei] == '\n':
+                _ps_ei += 1
+            _psrc = _psrc[:_ps_si] + _psrc[_ps_ei:]
+            print(f"Removed old {POLL_MARKER} for re-injection")
+
+if True:  # always inject
     POLL_ANCHOR = '\tbot.use(botRuntime.sequentialize(getTelegramSequentialKey));'
     if POLL_ANCHOR not in _psrc:
         POLL_ANCHOR = 'registerTelegramHandlers({'
@@ -362,15 +380,19 @@ else:
             '(function _registerEpaphrasPoll() {\n'
             '  if (globalThis.__epaphrasPollV1) return;\n'
             '  globalThis.__epaphrasPollV1 = true;\n'
-            '  const { spawn } = __require("child_process");\n'
+            '  const { execFileSync } = __require("child_process");\n'
+            '  const _logFs = __require("fs");\n'
             '  const SKILL_DIR = process.env.EPAPHRAS_SKILL_DIR || "' + _SKILL_DIR + '";\n'
             '  const INTERVAL_MS = 60 * 60 * 1000;\n'
+            '  _logFs.appendFileSync("/tmp/epaphras_poll.log", new Date().toISOString() + " IIFE_REGISTERED\\n");\n'
             '  function tick() {\n'
-            '    const p = spawn("python3", [SKILL_DIR + "/engine.py", "poll"],\n'
-            '                    { cwd: SKILL_DIR, env: process.env });\n'
-            '    let out = "";\n'
-            '    p.stdout.on("data", (d) => (out += d));\n'
-            '    p.on("close", () => { try { const _fs = __require("fs"); const _ts = new Date().toISOString(); _fs.appendFileSync("/tmp/epaphras_poll.log", _ts + " " + out.trim() + "\\n"); } catch (e) {} });\n'
+            '    try {\n'
+            '      const out = execFileSync("python3", [SKILL_DIR + "/engine.py", "poll"],\n'
+            '                              { cwd: SKILL_DIR, env: process.env, timeout: 120000 }).toString().trim();\n'
+            '      _logFs.appendFileSync("/tmp/epaphras_poll.log", new Date().toISOString() + " " + out + "\\n");\n'
+            '    } catch (e) {\n'
+            '      try { _logFs.appendFileSync("/tmp/epaphras_poll.log", new Date().toISOString() + " ERR " + String(e.message || e) + "\\n"); } catch (_) {}\n'
+            '    }\n'
             '  }\n'
             '  setInterval(tick, INTERVAL_MS);\n'
             '})();\n'
