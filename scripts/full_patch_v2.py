@@ -255,6 +255,7 @@ else:
             '\t\t\t\t\t\tconst _btns = _out.buttons || _out.inline_keyboard || [];\n'
             '\t\t\t\t\t\tconst _rm = _btns.length ? { reply_markup: { inline_keyboard: _btns } } : {};\n'
             '\t\t\t\t\t\tawait ctx.api.editMessageText(_msg.chat.id, _msg.message_id, _out.text || "", _rm);\n'
+            '\t\t\t\t\t\ttry { _es("python3", [_ENGINE, "store-chat-id", String(_msg.chat.id)], {timeout: 2000}); } catch (_) {}\n'
             '\t\t\t\t\t}\n'
             '\t\t\t\t} catch (_te) { /* swallow Telegram errors */ }\n'
             '\t\t\t\treturn; // skip next() — LLM bypassed\n'
