@@ -58,46 +58,39 @@ def _lookback_delta(lookback):
     return timedelta(days=1)
 
 
-def normalize_threads(item):
-    a = item.get("author") or {}
+def _normalize_post(item):
+    """Unwrap the {post, computed} envelope and return a unified record."""
+    p = item.get("post") or item
+    c = item.get("computed") or {}
+    a = p.get("author") or {}
+    e = p.get("engagement") or {}
     return {
-        "post_id": item.get("id"), "url": item.get("url"),
-        "text": item.get("text", ""),
+        "post_id": p.get("id"), "url": p.get("url"),
+        "text": (p.get("content") or {}).get("text", ""),
         "author": {"handle": a.get("username"), "followers": a.get("followers", 0)},
-        "created": item.get("published_on"),
-        "likes": item.get("likes", 0), "comments": item.get("replies", 0),
-        "shares": item.get("reposts", 0), "views": item.get("views", 0),
-        "reach": item.get("views", 0),
+        "created": _epoch_iso(p["published_at"]) if p.get("published_at") else None,
+        "likes": e.get("likes") or 0, "comments": e.get("comments") or 0,
+        "shares": e.get("shares") or 0, "views": e.get("views") or 0,
+        "reach": c.get("estimated_reach") or e.get("views") or 0,
+        "language": (c.get("language") or "").lower(),
     }
+
+
+def normalize_threads(item):
+    return _normalize_post(item)
 
 
 def normalize_tiktok(item):
-    a = item.get("author") or {}
-    s = item.get("stats") or {}
-    return {
-        "post_id": item.get("id"), "url": item.get("url"),
-        "text": item.get("description", ""),
-        "author": {"handle": a.get("unique_id"), "followers": a.get("follower_count", 0)},
-        "created": _epoch_iso(item["create_time"]) if item.get("create_time") else None,
-        "likes": s.get("digg_count", 0), "comments": s.get("comment_count", 0),
-        "shares": s.get("share_count", 0), "views": s.get("play_count", 0),
-        "reach": s.get("play_count", 0),
-    }
+    return _normalize_post(item)
 
 
 def normalize_reddit(item):
-    text = " ".join(filter(None, [item.get("title", ""), item.get("selftext", "")])).strip()
-    return {
-        "post_id": item.get("id"), "url": item.get("url"), "text": text,
-        "author": {"handle": item.get("author"), "followers": 0},
-        "created": _epoch_iso(item["created_utc"]) if item.get("created_utc") else None,
-        "likes": item.get("score", 0), "comments": item.get("num_comments", 0),
-        "shares": 0, "views": 0, "reach": 0,
-    }
+    return _normalize_post(item)
 
 
 def _results(envelope):
-    return (envelope.get("data") or {}).get("results", [])
+    data = envelope.get("data") or {}
+    return data.get("items") or data.get("results") or []
 
 
 _TIKTOK_LOOKBACK = {"24h": "yesterday", "7d": "this-week", "30d": "this-month"}

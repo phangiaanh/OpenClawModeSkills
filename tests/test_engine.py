@@ -509,6 +509,14 @@ def _sc_fixture(name):
     return _json.loads((Path(__file__).parent / "fixtures" / name).read_text())
 
 
+def test_normalize_post_surfaces_language():
+    item = _sc_fixture("threads_search.sample.json")["data"]["items"][0]
+    assert socialcrawl.normalize_threads(item)["language"] == "en"
+    # missing computed.language -> "" (never KeyError)
+    bare = {"post": {"id": "x"}, "computed": {}}
+    assert socialcrawl.normalize_threads(bare)["language"] == ""
+
+
 def test_normalize_threads_maps_unified_fields():
     item = _sc_fixture("threads_search.sample.json")["data"]["items"][0]
     rec = socialcrawl.normalize_threads(item)
