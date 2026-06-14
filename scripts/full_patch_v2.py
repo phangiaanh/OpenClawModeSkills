@@ -248,7 +248,7 @@ else:
             '\t\t\tif (!_out.error) {\n'
             '\t\t\t\ttry {\n'
             '\t\t\t\t\tif (_out.toast !== undefined) {\n'
-            '\t\t\t\t\t\tawait ctx.answerCallbackQuery({text: _out.toast || ""}).catch(() => {});\n'
+            '\t\t\t\t\t\tawait ctx.answerCallbackQuery({text: typeof _out.toast === "string" ? _out.toast : ""}).catch(() => {});\n'
             '\t\t\t\t\t} else {\n'
             '\t\t\t\t\t\tawait ctx.answerCallbackQuery().catch(() => {});\n'
             '\t\t\t\t\t\tconst _msg = ctx.callbackQuery.message;\n'

@@ -690,9 +690,20 @@ def handle_callback(data, cb):
                     "buttons": [], "inline_keyboard": []}
         sub_verb = parts[1] if len(parts) > 1 else ""
         if sub_verb == "topic":
+            if len(parts) < 3 or parts[2] not in snap.get("topics", {}):
+                return {"text": "⏳ This trending snapshot has expired — see the latest.",
+                        "buttons": [], "inline_keyboard": []}
             return build_carousel_card(snap, parts[2], 0)
         if sub_verb == "rank":
-            return build_carousel_card(snap, parts[2], int(parts[3]))
+            if len(parts) < 4 or parts[2] not in snap.get("topics", {}):
+                return {"text": "⏳ This trending snapshot has expired — see the latest.",
+                        "buttons": [], "inline_keyboard": []}
+            try:
+                idx = int(parts[3])
+            except (ValueError, TypeError):
+                return {"text": "⏳ This trending snapshot has expired — see the latest.",
+                        "buttons": [], "inline_keyboard": []}
+            return build_carousel_card(snap, parts[2], idx)
         raise ConfigError(f"unknown cb_trend sub-verb: {sub_verb}")
     if verb == "cb_analyze":
         snap = load_snapshot()
