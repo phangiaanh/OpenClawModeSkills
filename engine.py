@@ -28,6 +28,8 @@ DEFAULT_POLL = {
     "floors": {"tiktok": {"views": 100000, "likes": 10000},
                "reddit": {"likes": 500},
                "threads": {"likes": 500}},
+    "languages": ["vi", "en"],
+    "tiktok_region": "VN",
 }
 
 PLATFORM_EMOJI = {

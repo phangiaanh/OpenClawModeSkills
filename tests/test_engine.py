@@ -956,3 +956,17 @@ def test_search_threads_and_reddit_accept_and_ignore_region(monkeypatch):
         lambda path, params: {"success": True, "data": {"items": []}, "credits_remaining": 5})
     assert socialcrawl.search_threads("x", "24h", region="VN") == ([], 5)
     assert socialcrawl.search_reddit("x", "24h", region="VN") == ([], 5)
+
+
+def test_poll_config_installs_language_and_region_defaults():
+    data = {"modes": {}}
+    pc = engine.poll_config(data)
+    assert pc["languages"] == ["vi", "en"]
+    assert pc["tiktok_region"] == "VN"
+
+
+def test_default_template_has_language_and_region():
+    tmpl = _json.loads(
+        (Path(__file__).parent.parent / "templates" / "modes.default.json").read_text())
+    assert tmpl["poll"]["languages"] == ["vi", "en"]
+    assert tmpl["poll"]["tiktok_region"] == "VN"
