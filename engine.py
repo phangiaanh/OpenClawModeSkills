@@ -444,6 +444,16 @@ def build_carousel_card(snapshot, topic_id, idx):
     return {"text": text, "buttons": rows, "inline_keyboard": rows}
 
 
+def emit_payload(snapshot, chat_id):
+    """Returns {emit: card, chat_id: N} for the Node timer, or {} if not sendable."""
+    if not chat_id or not snapshot or not snapshot.get("topic_order"):
+        return {}
+    first_topic = snapshot["topic_order"][0]
+    if not snapshot["topics"].get(first_topic):
+        return {}
+    return {"emit": build_carousel_card(snapshot, first_topic, 0), "chat_id": chat_id}
+
+
 def _state_path():
     return Path(__file__).parent / "poll_state.json"
 
@@ -474,6 +484,11 @@ def cli_poll(data):
             capable_platforms=set(socialcrawl.SEARCH_ADAPTERS),
             state=state, log_path=_poll_log_path())
         save_state(_state_path(), state)
+        snap = load_snapshot()
+        chat_id = data.get("chat_id")
+        payload = emit_payload(snap, chat_id)
+        if payload:
+            summary.update(payload)
         return summary
     finally:
         lock.unlink(missing_ok=True)

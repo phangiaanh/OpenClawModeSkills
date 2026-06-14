@@ -1235,3 +1235,71 @@ def test_build_carousel_card_age_formatting():
     snap["topics"]["esports"][0]["age_hours"] = 36.0
     card2 = engine.build_carousel_card(snap, "esports", 0)
     assert "1d ago" in card2["text"]
+
+
+def test_emit_payload_returns_first_card_and_chat_id():
+    snap = _make_snap()
+    result = engine.emit_payload(snap, 12345678)
+    assert "emit" in result
+    assert result["chat_id"] == 12345678
+    assert "🎮 Esports" in result["emit"]["text"]   # first topic, first card
+    assert result["emit"]["buttons"]               # has 3 rows
+
+
+def test_emit_payload_omits_emit_when_no_chat_id():
+    snap = _make_snap()
+    assert engine.emit_payload(snap, None) == {}
+    assert engine.emit_payload(snap, 0) == {}
+
+
+def test_emit_payload_omits_emit_when_no_topics():
+    snap = _make_snap()
+    snap["topic_order"] = []
+    assert engine.emit_payload(snap, 12345678) == {}
+
+
+def test_cli_poll_includes_emit_and_chat_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    snap_path = tmp_path / "snapshot.json"
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(snap_path))
+    monkeypatch.setattr(engine, "_state_path", lambda: tmp_path / "state.json")
+    monkeypatch.setattr(engine, "_poll_log_path", lambda: tmp_path / "log.jsonl")
+    monkeypatch.setattr(engine, "_poll_lock_path", lambda: tmp_path / "poll.lock")
+    posts = [
+        {"post_id": "tt1", "url": "https://tiktok.com/1", "text": "esports win",
+         "author": {"handle": "user1", "followers": 1000},
+         "created": "2026-06-13T01:00:00+00:00",
+         "likes": 50000, "comments": 1000, "shares": 5000,
+         "views": 2000000, "reach": 2000000, "language": "vi"},
+    ]
+    monkeypatch.setattr(socialcrawl, "SEARCH_ADAPTERS",
+                        {"tiktok": lambda q, lb, region=None: (posts, 100),
+                         "reddit": lambda q, lb, region=None: ([], 100),
+                         "threads": lambda q, lb, region=None: ([], 100)})
+    data = _poll_data()
+    data["modes"]["culture_drama"]["topics"]["esports"]["icon"] = "🎮"
+    data["poll"]["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}
+    data["chat_id"] = 12345678
+    result = engine.cli_poll(data)
+    assert "emit" in result
+    assert result["chat_id"] == 12345678
+    assert "🎮" in result["emit"]["text"]
+
+
+def test_cli_poll_omits_emit_when_no_chat_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    snap_path = tmp_path / "snapshot.json"
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(snap_path))
+    monkeypatch.setattr(engine, "_state_path", lambda: tmp_path / "state.json")
+    monkeypatch.setattr(engine, "_poll_log_path", lambda: tmp_path / "log.jsonl")
+    monkeypatch.setattr(engine, "_poll_lock_path", lambda: tmp_path / "poll.lock")
+    monkeypatch.setattr(socialcrawl, "SEARCH_ADAPTERS",
+                        {"tiktok": lambda q, lb, region=None: ([], 100),
+                         "reddit": lambda q, lb, region=None: ([], 100),
+                         "threads": lambda q, lb, region=None: ([], 100)})
+    data = _poll_data()
+    data["poll"]["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}
+    # no chat_id in data
+    result = engine.cli_poll(data)
+    assert "emit" not in result
+    assert "chat_id" not in result
