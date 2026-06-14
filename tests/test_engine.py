@@ -1460,3 +1460,17 @@ def test_store_chat_id_cli(tmp_path):
     assert result.returncode == 0, result.stderr
     saved = json.loads(cfg.read_text())
     assert saved["chat_id"] == 11223344
+
+
+def test_store_chat_id_cli_missing_arg(tmp_path):
+    import subprocess
+    cfg = tmp_path / "modes.json"
+    cfg.write_text('{"modes": {}, "current_active_mode": null}')
+    result = subprocess.run(
+        ["python3", "engine.py", "store-chat-id", "--file", str(cfg)],
+        capture_output=True, text=True,
+        cwd=str(Path(__file__).parent.parent)
+    )
+    assert result.returncode == 1
+    out = json.loads(result.stdout)
+    assert "error" in out
