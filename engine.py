@@ -383,6 +383,8 @@ def build_carousel_card(snapshot, topic_id, idx):
     """Render one carousel card. Returns {text, buttons, inline_keyboard}."""
     topic_posts = snapshot["topics"][topic_id]
     count = len(topic_posts)
+    if count == 0:
+        raise ValueError(f"topic {topic_id!r} has no posts in snapshot")
     idx = idx % count
     record = topic_posts[idx]
     tick_id = snapshot["tick_id"]
@@ -405,6 +407,8 @@ def build_carousel_card(snapshot, topic_id, idx):
 
     header = (f"{meta['icon']} {meta['label']}  ·  {platform_name}  ·  "
               f"#{record['rank']} of {count}")
+    # Plain text — no parse_mode set; if ever switching to MarkdownV2, escape
+    # special chars in snippet, author, and score before passing to the API.
     text = (
         f"{header}\n\n"
         f'"{snippet}"\n\n'
