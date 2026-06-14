@@ -1019,3 +1019,78 @@ def test_cli_poll_passes_tiktok_region_to_adapter(tmp_path, monkeypatch):
     data["poll"]["tiktok_region"] = "VN"
     engine.cli_poll(data)
     assert captured["region"] == "VN"
+
+
+def test_run_poll_writes_snapshot(tmp_path):
+    data = _poll_data()
+    data["modes"]["culture_drama"]["platforms"] = ["tiktok"]
+    data["modes"]["culture_drama"]["topics"]["esports"]["icon"] = "🎮"
+    posts = [
+        {"post_id": "tt1", "url": "https://tiktok.com/1", "text": "esports win",
+         "author": {"handle": "user1", "followers": 1000},
+         "created": "2026-06-13T01:00:00+00:00",
+         "likes": 50000, "comments": 1000, "shares": 5000,
+         "views": 2000000, "reach": 2000000, "language": "vi"},
+    ]
+    snap_path = tmp_path / "snapshot.json"
+    engine.run_poll(data, now=_now_inside(),
+                    search_fn=lambda *a: (posts, 500),
+                    capable_platforms={"tiktok"},
+                    state={"posts": {}},
+                    log_path=tmp_path / "log.jsonl",
+                    snapshot_path=snap_path)
+    snap = json.loads(snap_path.read_text())
+    assert snap["tick_id"] == str(int(_now_inside().timestamp()))
+    assert snap["topic_order"] == ["esports"]
+    assert snap["topic_meta"]["esports"] == {"label": "Esports", "icon": "🎮"}
+    post = snap["topics"]["esports"][0]
+    assert post["post_id"] == "tt1"
+    assert post["author"] == "@user1"
+    assert post["views"] == 2000000
+    assert post["rank"] == 1
+    assert post["score"] > 0
+
+
+def test_run_poll_snapshot_merges_platforms_by_score(tmp_path):
+    data = _poll_data()
+    data["modes"]["culture_drama"]["platforms"] = ["tiktok", "reddit"]
+    tiktok_posts = [
+        {"post_id": "tt1", "url": "u", "text": "t",
+         "author": {"handle": "a", "followers": 0},
+         "created": "2026-06-13T01:00:00+00:00",
+         "likes": 200000, "comments": 5000, "shares": 10000,
+         "views": 5000000, "reach": 5000000, "language": "vi"},
+    ]
+    reddit_posts = [
+        {"post_id": "rd1", "url": "u", "text": "t",
+         "author": {"handle": "b", "followers": 0},
+         "created": "2026-06-13T01:00:00+00:00",
+         "likes": 1000, "comments": 200, "shares": 0,
+         "views": 0, "reach": 0, "language": "en"},
+    ]
+    def sfn(platform, q, lb):
+        return ({"tiktok": tiktok_posts, "reddit": reddit_posts}[platform], 500)
+    snap_path = tmp_path / "snapshot.json"
+    engine.run_poll(data, now=_now_inside(), search_fn=sfn,
+                    capable_platforms={"tiktok", "reddit"},
+                    state={"posts": {}},
+                    log_path=tmp_path / "log.jsonl",
+                    snapshot_path=snap_path)
+    snap = json.loads(snap_path.read_text())
+    posts = snap["topics"]["esports"]
+    assert len(posts) == 2
+    # TikTok post scores higher; rank 1 is TikTok
+    assert posts[0]["post_id"] == "tt1" and posts[0]["rank"] == 1
+    assert posts[1]["post_id"] == "rd1" and posts[1]["rank"] == 2
+
+
+def test_run_poll_no_snapshot_when_nothing_logged(tmp_path):
+    data = _poll_data()
+    snap_path = tmp_path / "snapshot.json"
+    engine.run_poll(data, now=_now_inside(),
+                    search_fn=lambda *a: ([], 500),
+                    capable_platforms={"tiktok", "reddit"},
+                    state={"posts": {}},
+                    log_path=tmp_path / "log.jsonl",
+                    snapshot_path=snap_path)
+    assert not snap_path.exists()

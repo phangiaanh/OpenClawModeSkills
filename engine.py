@@ -223,7 +223,7 @@ def poll_gate(data, now):
 
 
 def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
-             low_credit_threshold=0):
+             low_credit_threshold=0, snapshot_path=None):
     """One poll tick. Searches active topics x searchable platforms, scores,
     floors, caps top-N per (topic x platform), re-logs to JSONL. Never raises
     on a single platform failure."""
@@ -241,7 +241,7 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
     top_n, lookback = pcfg["top_n_per_platform_topic"], pcfg["lookback"]
     allowed_langs = set(pcfg.get("languages", ["vi", "en"]))
     state.setdefault("posts", {})
-    log_lines, markers = [], []
+    log_lines, markers, snap_entries = [], [], {}
     polled = found = logged = 0
     credits_remaining = None
 
@@ -290,9 +290,49 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
                     "score": round(sc, 4), "rank": rank,
                     "hours_trending": round(_hours_since(entry["first_seen"], now), 2),
                 })
+                snap_author = r.get("author") or {}
+                snap_entries.setdefault(tid, []).append({
+                    "platform": platform,
+                    "rank": rank,
+                    "post_id": r["post_id"],
+                    "url": r.get("url", ""),
+                    "text": r.get("text", ""),
+                    "author": "@" + (snap_author.get("handle") or "unknown"),
+                    "language": r.get("language", ""),
+                    "likes": r.get("likes", 0),
+                    "views": r.get("views", 0),
+                    "comments": r.get("comments", 0),
+                    "shares": r.get("shares", 0),
+                    "score": round(sc, 4),
+                    "age_hours": round(_hours_since(entry["first_seen"], now), 2),
+                })
                 logged += 1
 
     age_out_state(state, now)
+    if snap_entries:
+        if snapshot_path is None:
+            snapshot_path = _snapshot_path()
+        topic_order = [tid for tid in active_topics if tid in snap_entries]
+        topic_meta = {
+            tid: {
+                "label": active_topics[tid].get("label", tid),
+                "icon": active_topics[tid].get("icon", DEFAULT_ICON),
+            }
+            for tid in topic_order
+        }
+        for tid in topic_order:
+            snap_entries[tid].sort(key=lambda p: p["score"], reverse=True)
+            for i, p in enumerate(snap_entries[tid], 1):
+                p["rank"] = i
+        snapshot = {
+            "tick_id": str(int(now.timestamp())),
+            "topics": snap_entries,
+            "topic_order": topic_order,
+            "topic_meta": topic_meta,
+        }
+        sp = Path(snapshot_path)
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        sp.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
     if log_lines or markers:
         path = Path(log_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -309,6 +349,22 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
 def _poll_log_path():
     env = os.environ.get("EPAPHRAS_POLL_LOG")
     return Path(env) if env else Path(__file__).parent / "trending_posts.jsonl"
+
+
+def _snapshot_path():
+    env = os.environ.get("EPAPHRAS_SNAPSHOT")
+    return Path(env) if env else Path(__file__).parent / "latest_trending.json"
+
+
+def load_snapshot():
+    """Load latest_trending.json; returns None if absent or corrupt."""
+    p = _snapshot_path()
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def _state_path():
