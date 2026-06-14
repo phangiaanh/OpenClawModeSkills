@@ -605,6 +605,26 @@ def test_passes_floor_or_semantics():
     assert engine.passes_floor({"likes": 1}, {}) is True                        # no floor -> pass
 
 
+def test_keep_language_filters_to_allowed():
+    assert engine.keep_language({"language": "vi"}, {"vi", "en"}) is True
+    assert engine.keep_language({"language": "en"}, {"vi", "en"}) is True
+    assert engine.keep_language({"language": "hi"}, {"vi", "en"}) is False
+    assert engine.keep_language({"language": ""}, {"vi", "en"}) is False
+    assert engine.keep_language({"language": "hi"}, set()) is True   # fail-open: no allow-list
+
+
+def test_is_spam_flags_followbait_and_excess():
+    # the real DC-esports pollution: follow-bait + 3 @ + 5 #
+    spam = {"text": ("WELCOME TO OUR ESPORTS TEAM FOLLOW:- @a @b @c "
+                     "#trending #newplayers #ffesports #deathcrew #fyp")}
+    assert engine.is_spam(spam) is True
+    assert engine.is_spam({"text": "follow me for more clips"}) is True       # strong phrase
+    assert engine.is_spam({"text": "#a #b #c #d #e #f #g #h"}) is True         # 8 hashtags
+    assert engine.is_spam({"text": "@a @b @c @d done"}) is True               # 4 mentions
+    assert engine.is_spam({"text": "great match today #esports #fyp #valorant"}) is False
+    assert engine.is_spam({"text": ""}) is False
+
+
 def test_hours_since_parses_iso_and_z():
     now = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
     assert engine._hours_since("2026-06-13T10:00:00+00:00", now) == 2.0

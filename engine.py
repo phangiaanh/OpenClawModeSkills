@@ -111,6 +111,31 @@ def passes_floor(record, floor):
     return any(record.get(metric, 0) >= threshold for metric, threshold in floor.items())
 
 
+_FOLLOW_BAIT = ("follow me", "follow back", "follow us", "follow:-",
+                "f4f", "follow for follow", "sub to", "link in bio", "dm me")
+
+
+def keep_language(record, allowed):
+    """True if the post's language is allowed. Empty/falsy `allowed` keeps all (fail-open)."""
+    if not allowed:
+        return True
+    return (record.get("language") or "") in allowed
+
+
+def is_spam(record):
+    """True for follow-bait / hashtag- / mention-spam. Multi-signal to spare legit #fyp posts."""
+    text = record.get("text") or ""
+    low = text.lower()
+    hashes, ats = text.count("#"), text.count("@")
+    if any(p in low for p in _FOLLOW_BAIT):   # strong signal
+        return True
+    if hashes >= 8 or ats >= 4:               # very excessive on its own
+        return True
+    if hashes >= 5 and ats >= 3:              # combined moderate (the DC-esports case)
+        return True
+    return False
+
+
 def _hours_since(iso_str, now):
     """Hours between an ISO timestamp and `now` (>= 0). 0 if unparseable/missing."""
     if not iso_str:
