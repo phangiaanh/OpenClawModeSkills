@@ -834,6 +834,14 @@ def get_panel_msgid(data):
     return {"message_id": mid}
 
 
+def store_chat_id(data, chat_id):
+    try:
+        data["chat_id"] = int(chat_id)
+    except (ValueError, TypeError):
+        raise ConfigError(f"invalid chat id: {chat_id!r}")
+    return data
+
+
 def setmode(data, mode_id):
     if mode_id not in data["modes"]:
         raise ConfigError(f"unknown mode: {mode_id}")
@@ -871,7 +879,7 @@ def main(argv=None):
     parser.add_argument(
         "command",
         choices=["render-modes", "render-topics", "setmode", "toggle", "init",
-                 "store-msgid", "get-msgid", "poll",
+                 "store-msgid", "get-msgid", "poll", "store-chat-id",
                  "handle-callback", "handle-text", "render-platforms"],
     )
     parser.add_argument("arg", nargs="?", help="mode_id or topic_id")
@@ -917,6 +925,13 @@ def main(argv=None):
             store_panel_msgid(data, args.arg)
             save_config(path, data)
             _emit({"ok": True, "message_id": data["panel_message_id"]})
+        elif args.command == "store-chat-id":
+            if not args.arg:
+                _emit({"error": "store-chat-id requires a chat_id argument"})
+                return 1
+            store_chat_id(data, args.arg)
+            save_config(path, data)
+            _emit({"ok": True, "chat_id": data["chat_id"]})
         elif args.command == "get-msgid":
             _emit(get_panel_msgid(data))
         elif args.command == "poll":

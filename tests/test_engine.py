@@ -1434,3 +1434,29 @@ def test_handle_callback_cb_analyze_stale(tmp_path, monkeypatch):
     result = engine.handle_callback(data, "cb_analyze:9999999999:esports:0")
     assert "expired" in result["text"].lower()
     assert result["buttons"] == []
+
+
+def test_store_chat_id_saves_and_retrieves():
+    data = {}
+    engine.store_chat_id(data, 99887766)
+    assert data["chat_id"] == 99887766
+
+
+def test_store_chat_id_rejects_non_int():
+    data = {}
+    with pytest.raises(engine.ConfigError):
+        engine.store_chat_id(data, "not_an_int")
+
+
+def test_store_chat_id_cli(tmp_path):
+    import subprocess
+    cfg = tmp_path / "modes.json"
+    cfg.write_text('{"modes": {}, "current_active_mode": null}')
+    result = subprocess.run(
+        ["python3", "engine.py", "store-chat-id", "11223344", "--file", str(cfg)],
+        capture_output=True, text=True,
+        cwd=str(Path(__file__).parent.parent)
+    )
+    assert result.returncode == 0, result.stderr
+    saved = json.loads(cfg.read_text())
+    assert saved["chat_id"] == 11223344
