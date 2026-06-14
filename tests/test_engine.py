@@ -1364,3 +1364,73 @@ def test_run_poll_returns_none_snapshot_when_nothing_logged(tmp_path):
                              log_path=tmp_path / "log.jsonl",
                              snapshot_path=tmp_path / "snap.json")
     assert result.get("snapshot") is None
+
+
+def test_handle_callback_cb_noop_returns_toast():
+    data = json.loads(FIXTURE.read_text())
+    result = engine.handle_callback(data, "cb_noop")
+    assert result == {"toast": ""}
+
+
+def test_handle_callback_cb_trend_topic_nav(tmp_path, monkeypatch):
+    snap = _make_snap()
+    snap_path = tmp_path / "snap.json"
+    snap_path.write_text(json.dumps(snap))
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(snap_path))
+    data = json.loads(FIXTURE.read_text())
+    result = engine.handle_callback(data, f"cb_trend:{snap['tick_id']}:topic:showbiz")
+    assert "🎬 Showbiz" in result["text"]
+    assert result["buttons"]  # 3 rows
+
+
+def test_handle_callback_cb_trend_rank_nav(tmp_path, monkeypatch):
+    snap = _make_snap()
+    snap_path = tmp_path / "snap.json"
+    snap_path.write_text(json.dumps(snap))
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(snap_path))
+    data = json.loads(FIXTURE.read_text())
+    result = engine.handle_callback(data, f"cb_trend:{snap['tick_id']}:rank:esports:1")
+    assert "Reddit" in result["text"]
+    assert "#2 of 2" in result["text"]
+
+
+def test_handle_callback_cb_trend_stale_tick_id(tmp_path, monkeypatch):
+    snap = _make_snap(tick_id="1111111111")
+    snap_path = tmp_path / "snap.json"
+    snap_path.write_text(json.dumps(snap))
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(snap_path))
+    data = json.loads(FIXTURE.read_text())
+    result = engine.handle_callback(data, "cb_trend:9999999999:topic:esports")
+    assert "expired" in result["text"].lower()
+    assert result["buttons"] == []
+
+
+def test_handle_callback_cb_trend_no_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(tmp_path / "missing.json"))
+    data = json.loads(FIXTURE.read_text())
+    result = engine.handle_callback(data, "cb_trend:1111111111:topic:esports")
+    assert "expired" in result["text"].lower() or "trending" in result["text"].lower()
+    assert result["buttons"] == []
+
+
+def test_handle_callback_cb_analyze_stub(tmp_path, monkeypatch):
+    snap = _make_snap()
+    snap_path = tmp_path / "snap.json"
+    snap_path.write_text(json.dumps(snap))
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(snap_path))
+    data = json.loads(FIXTURE.read_text())
+    result = engine.handle_callback(data,
+                                    f"cb_analyze:{snap['tick_id']}:esports:0")
+    assert result.get("toast") == "📊 Analyze coming soon"
+    assert "text" not in result   # no message edit
+
+
+def test_handle_callback_cb_analyze_stale(tmp_path, monkeypatch):
+    snap = _make_snap(tick_id="1111111111")
+    snap_path = tmp_path / "snap.json"
+    snap_path.write_text(json.dumps(snap))
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(snap_path))
+    data = json.loads(FIXTURE.read_text())
+    result = engine.handle_callback(data, "cb_analyze:9999999999:esports:0")
+    assert "expired" in result["text"].lower()
+    assert result["buttons"] == []

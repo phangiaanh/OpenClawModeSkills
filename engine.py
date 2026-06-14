@@ -658,6 +658,8 @@ def handle_callback(data, cb):
         return cancel(data)
     if cb == "cb_notif":
         return toggle_polling(data)
+    if cb == "cb_noop":
+        return {"toast": ""}
     if ":" not in cb:
         raise ConfigError(f"unknown callback: {cb}")
     verb, arg = cb.split(":", 1)
@@ -679,6 +681,27 @@ def handle_callback(data, cb):
         return confirm_delete_topic(data, mode_id, topic_id)
     if verb == "cb_confirmdel":
         return perform_delete(data, arg)
+    if verb == "cb_trend":
+        snap = load_snapshot()
+        parts = arg.split(":", 3)
+        tick_id_cb = parts[0] if parts else ""
+        if snap is None or snap.get("tick_id") != tick_id_cb:
+            return {"text": "⏳ This trending snapshot has expired — see the latest.",
+                    "buttons": [], "inline_keyboard": []}
+        sub_verb = parts[1] if len(parts) > 1 else ""
+        if sub_verb == "topic":
+            return build_carousel_card(snap, parts[2], 0)
+        if sub_verb == "rank":
+            return build_carousel_card(snap, parts[2], int(parts[3]))
+        raise ConfigError(f"unknown cb_trend sub-verb: {sub_verb}")
+    if verb == "cb_analyze":
+        snap = load_snapshot()
+        parts = arg.split(":", 2)
+        tick_id_cb = parts[0] if parts else ""
+        if snap is None or snap.get("tick_id") != tick_id_cb:
+            return {"text": "⏳ This trending snapshot has expired — see the latest.",
+                    "buttons": [], "inline_keyboard": []}
+        return {"toast": "📊 Analyze coming soon"}
     raise ConfigError(f"unknown callback: {cb}")
 
 
