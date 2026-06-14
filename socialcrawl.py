@@ -97,20 +97,22 @@ _TIKTOK_LOOKBACK = {"24h": "yesterday", "7d": "this-week", "30d": "this-month"}
 _REDDIT_LOOKBACK = {"24h": "day", "7d": "week", "30d": "month"}
 
 
-def search_threads(query, lookback):
+def search_threads(query, lookback, region=None):
     start = (datetime.now(timezone.utc) - _lookback_delta(lookback)).date().isoformat()
     env = _sc_get("/threads/search", {"query": query, "start_date": start})
     return [normalize_threads(i) for i in _results(env)], env.get("credits_remaining")
 
 
-def search_tiktok(query, lookback):
-    env = _sc_get("/tiktok/search", {
-        "query": query, "date_posted": _TIKTOK_LOOKBACK.get(lookback, "this-week"),
-        "sort_by": "most-liked"})
+def search_tiktok(query, lookback, region=None):
+    params = {"query": query, "date_posted": _TIKTOK_LOOKBACK.get(lookback, "this-week"),
+              "sort_by": "most-liked"}
+    if region:
+        params["region"] = region          # uppercase ISO; soft proxy signal
+    env = _sc_get("/tiktok/search", params)
     return [normalize_tiktok(i) for i in _results(env)], env.get("credits_remaining")
 
 
-def search_reddit(query, lookback):
+def search_reddit(query, lookback, region=None):
     env = _sc_get("/reddit/search", {
         "query": query, "sort": "top", "timeframe": _REDDIT_LOOKBACK.get(lookback, "week")})
     return [normalize_reddit(i) for i in _results(env)], env.get("credits_remaining")

@@ -909,3 +909,30 @@ def test_default_template_is_single_mode_with_poll_block():
     # the seeded template renders cleanly
     out = engine.render_topics(tmpl, "culture_drama")
     assert "Platforms:" in out["text"]
+
+
+def test_search_tiktok_includes_region_when_set(monkeypatch):
+    captured = {}
+    def fake_get(path, params):
+        captured["params"] = params
+        return {"success": True, "data": {"items": []}, "credits_remaining": 5}
+    monkeypatch.setattr(socialcrawl, "_sc_get", fake_get)
+    socialcrawl.search_tiktok("esports", "24h", region="VN")
+    assert captured["params"]["region"] == "VN"
+
+
+def test_search_tiktok_omits_region_when_none(monkeypatch):
+    captured = {}
+    def fake_get(path, params):
+        captured["params"] = params
+        return {"success": True, "data": {"items": []}, "credits_remaining": 5}
+    monkeypatch.setattr(socialcrawl, "_sc_get", fake_get)
+    socialcrawl.search_tiktok("esports", "24h")
+    assert "region" not in captured["params"]
+
+
+def test_search_threads_and_reddit_accept_and_ignore_region(monkeypatch):
+    monkeypatch.setattr(socialcrawl, "_sc_get",
+        lambda path, params: {"success": True, "data": {"items": []}, "credits_remaining": 5})
+    assert socialcrawl.search_threads("x", "24h", region="VN") == ([], 5)
+    assert socialcrawl.search_reddit("x", "24h", region="VN") == ([], 5)
