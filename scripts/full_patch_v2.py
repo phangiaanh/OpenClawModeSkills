@@ -370,7 +370,7 @@ else:
             '                    { cwd: SKILL_DIR, env: process.env });\n'
             '    let out = "";\n'
             '    p.stdout.on("data", (d) => (out += d));\n'
-            '    p.on("close", () => { try { console.log("[epaphras poll]", out.trim()); } catch (e) {} });\n'
+            '    p.on("close", () => { try { const _fs = __require("fs"); const _ts = new Date().toISOString(); _fs.appendFileSync("/tmp/epaphras_poll.log", _ts + " " + out.trim() + "\\n"); } catch (e) {} });\n'
             '  }\n'
             '  setInterval(tick, INTERVAL_MS);\n'
             '})();\n'
