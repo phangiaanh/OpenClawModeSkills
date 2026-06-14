@@ -242,6 +242,7 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
     allowed_langs = set(pcfg.get("languages", ["vi", "en"]))
     state.setdefault("posts", {})
     log_lines, markers, snap_entries = [], [], {}
+    _snapshot = None
     polled = found = logged = 0
     credits_remaining = None
 
@@ -326,7 +327,7 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
             snap_entries[tid].sort(key=lambda p: p["score"], reverse=True)
             for i, p in enumerate(snap_entries[tid], 1):
                 p["rank"] = i
-        snapshot = {
+        _snapshot = {
             "tick_id": str(int(now.timestamp())),
             "topics": snap_entries,
             "topic_order": topic_order,
@@ -335,7 +336,7 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
         sp = Path(snapshot_path)
         sp.parent.mkdir(parents=True, exist_ok=True)
         tmp = sp.with_suffix(".tmp")
-        tmp.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(_snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(sp)
     if log_lines or markers:
         path = Path(log_path)
@@ -347,7 +348,8 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
                 f.write(json.dumps({"ts": now.isoformat(), "marker": m},
                                    ensure_ascii=False) + "\n")
     return {"polled": polled, "found": found, "logged": logged,
-            "credits_remaining": credits_remaining, "markers": markers}
+            "credits_remaining": credits_remaining, "markers": markers,
+            "snapshot": _snapshot}
 
 
 def _poll_log_path():
@@ -484,10 +486,10 @@ def cli_poll(data):
             capable_platforms=set(socialcrawl.SEARCH_ADAPTERS),
             state=state, log_path=_poll_log_path())
         save_state(_state_path(), state)
-        snap = load_snapshot()
+        snap = summary.pop("snapshot", None)   # use this tick's data; pop from output
         chat_id = data.get("chat_id")
-        payload = emit_payload(snap, chat_id)
-        if payload:
+        if "skipped" not in summary:
+            payload = emit_payload(snap, chat_id)
             summary.update(payload)
         return summary
     finally:

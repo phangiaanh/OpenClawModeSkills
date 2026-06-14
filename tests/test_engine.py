@@ -1303,3 +1303,64 @@ def test_cli_poll_omits_emit_when_no_chat_id(tmp_path, monkeypatch):
     result = engine.cli_poll(data)
     assert "emit" not in result
     assert "chat_id" not in result
+
+
+def test_cli_poll_no_emit_when_nothing_scored(tmp_path, monkeypatch):
+    """Zero-result tick must not emit stale snapshot."""
+    monkeypatch.setenv("SOCIALCRAWL_API_KEY", "sc_test")
+    snap_path = tmp_path / "snapshot.json"
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(snap_path))
+    # Write a "stale" snapshot from a prior tick
+    snap_path.write_text(json.dumps({
+        "tick_id": "1111111111", "topics": {"esports": []},
+        "topic_order": ["esports"], "topic_meta": {"esports": {"label": "E", "icon": "🎮"}},
+    }))
+    monkeypatch.setattr(engine, "_state_path", lambda: tmp_path / "state.json")
+    monkeypatch.setattr(engine, "_poll_log_path", lambda: tmp_path / "log.jsonl")
+    monkeypatch.setattr(engine, "_poll_lock_path", lambda: tmp_path / "poll.lock")
+    monkeypatch.setattr(socialcrawl, "SEARCH_ADAPTERS",
+                        {"tiktok": lambda q, lb, region=None: ([], 100),
+                         "reddit": lambda q, lb, region=None: ([], 100),
+                         "threads": lambda q, lb, region=None: ([], 100)})
+    data = _poll_data()
+    data["poll"]["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}
+    data["chat_id"] = 12345678
+    result = engine.cli_poll(data)
+    # No posts logged → snapshot not written this tick → no emit
+    assert "emit" not in result
+    assert "snapshot" not in result   # popped from output
+
+
+def test_run_poll_returns_snapshot_in_result(tmp_path):
+    data = _poll_data()
+    data["modes"]["culture_drama"]["platforms"] = ["tiktok"]
+    data["modes"]["culture_drama"]["topics"]["esports"]["icon"] = "🎮"
+    posts = [
+        {"post_id": "tt1", "url": "https://tiktok.com/1", "text": "esports win",
+         "author": {"handle": "user1", "followers": 1000},
+         "created": "2026-06-13T01:00:00+00:00",
+         "likes": 50000, "comments": 1000, "shares": 5000,
+         "views": 2000000, "reach": 2000000, "language": "vi"},
+    ]
+    result = engine.run_poll(data, now=_now_inside(),
+                             search_fn=lambda *a: (posts, 500),
+                             capable_platforms={"tiktok"},
+                             state={"posts": {}},
+                             log_path=tmp_path / "log.jsonl",
+                             snapshot_path=tmp_path / "snap.json")
+    assert "snapshot" in result
+    snap = result["snapshot"]
+    assert snap is not None
+    assert snap["tick_id"] == str(int(_now_inside().timestamp()))
+    assert "esports" in snap["topics"]
+
+
+def test_run_poll_returns_none_snapshot_when_nothing_logged(tmp_path):
+    data = _poll_data()
+    result = engine.run_poll(data, now=_now_inside(),
+                             search_fn=lambda *a: ([], 500),
+                             capable_platforms={"tiktok", "reddit"},
+                             state={"posts": {}},
+                             log_path=tmp_path / "log.jsonl",
+                             snapshot_path=tmp_path / "snap.json")
+    assert result.get("snapshot") is None
