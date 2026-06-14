@@ -194,6 +194,8 @@ def age_out_state(state, now, max_age_hours=24):
 def poll_config(data):
     if "poll" not in data:
         data["poll"] = copy.deepcopy(DEFAULT_POLL)
+    data["poll"].setdefault("languages", DEFAULT_POLL["languages"])
+    data["poll"].setdefault("tiktok_region", DEFAULT_POLL["tiktok_region"])
     return data["poll"]
 
 

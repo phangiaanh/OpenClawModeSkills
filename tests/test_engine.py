@@ -986,13 +986,17 @@ def test_run_poll_drops_foreign_language_and_spam(tmp_path):
         {"post_id": "drop_spam", "url": "u", "text": "follow me @x @y @z #a #b #c #d #e",
          "author": {"handle": "c", "followers": 0}, "created": "2026-06-13T01:00:00+00:00",
          "likes": 100, "comments": 1, "shares": 0, "views": 0, "reach": 0, "language": "en"},
+        {"post_id": "drop_combined", "url": "u",
+         "text": "@alpha @beta @gamma #topic1 #topic2 #topic3 #topic4 #topic5",
+         "author": {"handle": "d", "followers": 0}, "created": "2026-06-13T01:00:00+00:00",
+         "likes": 100, "comments": 1, "shares": 0, "views": 0, "reach": 0, "language": "en"},
     ]
     log = tmp_path / "log.jsonl"
     out = engine.run_poll(data, now=_now_inside(), search_fn=lambda *a: (posts, 500),
                           capable_platforms={"reddit"}, state={"posts": {}}, log_path=log)
     ids = {json.loads(l)["post_id"] for l in log.read_text().splitlines()}
     assert ids == {"keep_en"}                 # hi dropped by language, spam dropped by is_spam
-    assert out["found"] == 3 and out["logged"] == 1
+    assert out["found"] == 4 and out["logged"] == 1
 
 
 def test_cli_poll_passes_tiktok_region_to_adapter(tmp_path, monkeypatch):
