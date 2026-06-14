@@ -1115,3 +1115,123 @@ def test_load_snapshot_returns_data_when_present(tmp_path, monkeypatch):
     monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(p))
     result = engine.load_snapshot()
     assert result["tick_id"] == "123"
+
+
+# ---------------------------------------------------------------------------
+# build_carousel_card tests
+# ---------------------------------------------------------------------------
+
+def _make_snap(tick_id="1781510400"):
+    """Minimal snapshot fixture for carousel tests."""
+    return {
+        "tick_id": tick_id,
+        "topics": {
+            "esports": [
+                {"platform": "tiktok", "rank": 1, "post_id": "tt1",
+                 "url": "https://tiktok.com/1",
+                 "text": "BTR qualified to EWC paris!! " + "x" * 120,
+                 "author": "@cukrikkk2", "language": "vi",
+                 "likes": 5332, "views": 63674, "comments": 93, "shares": 71,
+                 "score": 87.3, "age_hours": 2.0},
+                {"platform": "reddit", "rank": 2, "post_id": "rd1",
+                 "url": "https://reddit.com/r/esports/1",
+                 "text": "Reddit post about esports",
+                 "author": "@redditor", "language": "en",
+                 "likes": 2400, "views": 0, "comments": 540, "shares": 0,
+                 "score": 42.1, "age_hours": 5.0},
+            ],
+            "showbiz": [
+                {"platform": "threads", "rank": 1, "post_id": "th1",
+                 "url": "https://threads.net/1",
+                 "text": "showbiz news",
+                 "author": "@celeb", "language": "vi",
+                 "likes": 100, "views": 5000, "comments": 20, "shares": 10,
+                 "score": 15.0, "age_hours": 1.0},
+            ],
+        },
+        "topic_order": ["esports", "showbiz"],
+        "topic_meta": {
+            "esports": {"label": "Esports", "icon": "🎮"},
+            "showbiz": {"label": "Showbiz", "icon": "🎬"},
+        },
+    }
+
+
+def test_build_carousel_card_header_and_snippet():
+    snap = _make_snap()
+    card = engine.build_carousel_card(snap, "esports", 0)
+    assert "🎮 Esports" in card["text"]
+    assert "TikTok" in card["text"]
+    assert "#1 of 2" in card["text"]
+    # snippet truncated at 140 chars + ellipsis
+    assert "BTR qualified to EWC paris!!" in card["text"]
+    assert "…" in card["text"]
+    # engagement row
+    assert "❤️ 5,332" in card["text"]
+    assert "👁️ 63,674" in card["text"]
+    assert "💬 93" in card["text"]
+    assert "🔁 71" in card["text"]
+    # footer
+    assert "🔥 87.3" in card["text"]
+    assert "2h ago" in card["text"]
+
+
+def test_build_carousel_card_reddit_omits_views_and_shares():
+    snap = _make_snap()
+    card = engine.build_carousel_card(snap, "esports", 1)
+    assert "Reddit" in card["text"]
+    assert "👁️" not in card["text"]   # views=0 → omitted
+    assert "🔁" not in card["text"]   # shares=0 → omitted
+    assert "❤️ 2,400" in card["text"]
+    assert "💬 540" in card["text"]
+
+
+def test_build_carousel_card_selected_tab_marked():
+    snap = _make_snap()
+    card = engine.build_carousel_card(snap, "esports", 0)
+    tabs = card["buttons"][0]
+    esports_tab = next(b for b in tabs if "🎮" in b["text"])
+    showbiz_tab = next(b for b in tabs if "🎬" in b["text"])
+    assert "•" in esports_tab["text"]
+    assert "•" not in showbiz_tab["text"]
+
+
+def test_build_carousel_card_pager_wraps():
+    snap = _make_snap()
+    # idx=0 → ◀ goes to last (1), ▶ goes to next (1)
+    card = engine.build_carousel_card(snap, "esports", 0)
+    pager = card["buttons"][1]
+    prev_btn = next(b for b in pager if b.get("text") == "◀")
+    next_btn = next(b for b in pager if b.get("text") == "▶")
+    assert prev_btn["callback_data"].endswith(":1")  # wraps to last
+    assert next_btn["callback_data"].endswith(":1")
+    # idx=1 (last) → ◀ goes to 0, ▶ wraps to 0
+    card2 = engine.build_carousel_card(snap, "esports", 1)
+    pager2 = card2["buttons"][1]
+    prev2 = next(b for b in pager2 if b.get("text") == "◀")
+    next2 = next(b for b in pager2 if b.get("text") == "▶")
+    assert prev2["callback_data"].endswith(":0")
+    assert next2["callback_data"].endswith(":0")
+
+
+def test_build_carousel_card_url_button_and_analyze():
+    snap = _make_snap()
+    card = engine.build_carousel_card(snap, "esports", 0)
+    action_row = card["buttons"][2]
+    open_btn = next(b for b in action_row if "Open" in b.get("text", ""))
+    analyze_btn = next(b for b in action_row if "Analyze" in b.get("text", ""))
+    assert open_btn["url"] == "https://tiktok.com/1"
+    assert "url" not in analyze_btn   # not a URL button
+    assert analyze_btn["callback_data"].startswith("cb_analyze:")
+
+
+def test_build_carousel_card_age_formatting():
+    snap = _make_snap()
+    # age_hours=0.5 → "30m ago"
+    snap["topics"]["esports"][0]["age_hours"] = 0.5
+    card = engine.build_carousel_card(snap, "esports", 0)
+    assert "30m ago" in card["text"]
+    # age_hours=36 → "1d ago"
+    snap["topics"]["esports"][0]["age_hours"] = 36.0
+    card2 = engine.build_carousel_card(snap, "esports", 0)
+    assert "1d ago" in card2["text"]

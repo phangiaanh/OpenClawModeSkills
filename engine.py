@@ -376,6 +376,70 @@ def load_snapshot():
         return None
 
 
+_PLATFORM_NAMES = {"tiktok": "TikTok", "reddit": "Reddit", "threads": "Threads"}
+
+
+def build_carousel_card(snapshot, topic_id, idx):
+    """Render one carousel card. Returns {text, buttons, inline_keyboard}."""
+    topic_posts = snapshot["topics"][topic_id]
+    count = len(topic_posts)
+    idx = idx % count
+    record = topic_posts[idx]
+    tick_id = snapshot["tick_id"]
+    meta = snapshot["topic_meta"][topic_id]
+
+    snippet = record["text"][:140] + ("…" if len(record["text"]) > 140 else "")
+    platform_name = _PLATFORM_NAMES.get(record["platform"],
+                                        record["platform"].capitalize())
+    age = record["age_hours"]
+    age_str = (f"{int(age * 60)}m ago" if age < 1
+               else f"{int(age)}h ago" if age < 24
+               else f"{int(age / 24)}d ago")
+
+    parts = [f"❤️ {record['likes']:,}"]
+    if record["views"]:
+        parts.append(f"👁️ {record['views']:,}")
+    parts.append(f"💬 {record['comments']:,}")
+    if record["shares"]:
+        parts.append(f"🔁 {record['shares']:,}")
+
+    header = (f"{meta['icon']} {meta['label']}  ·  {platform_name}  ·  "
+              f"#{record['rank']} of {count}")
+    text = (
+        f"{header}\n\n"
+        f'"{snippet}"\n\n'
+        f"👤 {record['author']}\n"
+        f"{'   '.join(parts)}\n"
+        f"🔥 {record['score']}  ·  🕐 {age_str}"
+    )
+
+    tab_row = []
+    for tid in snapshot["topic_order"]:
+        tm = snapshot["topic_meta"][tid]
+        suffix = "•" if tid == topic_id else ""
+        tab_row.append({
+            "text": tm["icon"] + suffix,
+            "callback_data": f"cb_trend:{tick_id}:topic:{tid}",
+        })
+
+    prev_idx = (idx - 1) % count
+    next_idx = (idx + 1) % count
+    pager_row = [
+        {"text": "◀",
+         "callback_data": f"cb_trend:{tick_id}:rank:{topic_id}:{prev_idx}"},
+        {"text": f"{idx + 1}/{count}", "callback_data": "cb_noop"},
+        {"text": "▶",
+         "callback_data": f"cb_trend:{tick_id}:rank:{topic_id}:{next_idx}"},
+    ]
+    action_row = [
+        {"text": "🔗 Open post", "url": record["url"]},
+        {"text": "📊 Analyze",
+         "callback_data": f"cb_analyze:{tick_id}:{topic_id}:{idx}"},
+    ]
+    rows = [tab_row, pager_row, action_row]
+    return {"text": text, "buttons": rows, "inline_keyboard": rows}
+
+
 def _state_path():
     return Path(__file__).parent / "poll_state.json"
 
