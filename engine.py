@@ -290,10 +290,12 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
                     "score": round(sc, 4), "rank": rank,
                     "hours_trending": round(_hours_since(entry["first_seen"], now), 2),
                 })
-                snap_author = r.get("author") or {}
+                snap_author = r.get("author")
+                if not isinstance(snap_author, dict):
+                    snap_author = {}
                 snap_entries.setdefault(tid, []).append({
                     "platform": platform,
-                    "rank": rank,
+                    "rank": 0,  # reassigned cross-platform after sort
                     "post_id": r["post_id"],
                     "url": r.get("url", ""),
                     "text": r.get("text", ""),
@@ -332,7 +334,9 @@ def run_poll(data, *, now, search_fn, capable_platforms, state, log_path,
         }
         sp = Path(snapshot_path)
         sp.parent.mkdir(parents=True, exist_ok=True)
-        sp.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp = sp.with_suffix(".tmp")
+        tmp.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(sp)
     if log_lines or markers:
         path = Path(log_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -357,7 +361,12 @@ def _snapshot_path():
 
 
 def load_snapshot():
-    """Load latest_trending.json; returns None if absent or corrupt."""
+    """Load latest_trending.json; returns None if absent or corrupt.
+
+    Callers must check staleness via the returned ``tick_id`` field — this
+    function does not detect stale data (old files remain after a tick with
+    no scored posts).
+    """
     p = _snapshot_path()
     if not p.exists():
         return None

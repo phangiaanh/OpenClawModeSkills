@@ -1094,3 +1094,24 @@ def test_run_poll_no_snapshot_when_nothing_logged(tmp_path):
                     log_path=tmp_path / "log.jsonl",
                     snapshot_path=snap_path)
     assert not snap_path.exists()
+
+
+def test_load_snapshot_returns_none_when_absent(tmp_path, monkeypatch):
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(tmp_path / "missing.json"))
+    assert engine.load_snapshot() is None
+
+
+def test_load_snapshot_returns_none_when_corrupt(tmp_path, monkeypatch):
+    p = tmp_path / "snap.json"
+    p.write_text("not valid json")
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(p))
+    assert engine.load_snapshot() is None
+
+
+def test_load_snapshot_returns_data_when_present(tmp_path, monkeypatch):
+    p = tmp_path / "snap.json"
+    data = {"tick_id": "123", "topics": {}, "topic_order": [], "topic_meta": {}}
+    p.write_text(json.dumps(data))
+    monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(p))
+    result = engine.load_snapshot()
+    assert result["tick_id"] == "123"
