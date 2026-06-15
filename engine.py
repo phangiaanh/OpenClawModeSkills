@@ -20,7 +20,7 @@ DEFAULT_FILE = Path(__file__).parent / "modes.json"
 DEFAULT_POLL = {
     "enabled": True,
     "interval_minutes": 60,
-    "window": {"start": "08:00", "end": "20:00", "tz": "Asia/Ho_Chi_Minh"},
+    "window": {"start": "00:00", "end": "23:59", "tz": "Asia/Ho_Chi_Minh"},
     "lookback": "24h",
     "top_n_per_platform_topic": 3,
     "score": {"w_like": 1, "w_comment": 2, "w_share": 2, "w_reach": 1,
@@ -685,46 +685,57 @@ def handle_callback(data, cb, chat_id=None, message_id=None):
         return perform_delete(data, arg)
     if verb == "cb_trend":
         snap = load_snapshot()
-        parts = arg.split(":", 3)
-        tick_id_cb = parts[0] if parts else ""
-        if snap is None or snap.get("tick_id") != tick_id_cb:
-            return {"text": "⏳ This trending snapshot has expired — see the latest.",
+        if snap is None:
+            return {"text": "⏳ No trending data yet — check back soon.",
                     "buttons": [], "inline_keyboard": []}
+        parts = arg.split(":", 3)
         sub_verb = parts[1] if len(parts) > 1 else ""
+        topics = snap.get("topics", {})
         if sub_verb == "topic":
-            if len(parts) < 3 or parts[2] not in snap.get("topics", {}):
-                return {"text": "⏳ This trending snapshot has expired — see the latest.",
+            topic_id = parts[2] if len(parts) > 2 else ""
+            if topic_id not in topics:
+                topic_id = next(iter(topics), None)
+            if not topic_id:
+                return {"text": "⏳ No trending data yet — check back soon.",
                         "buttons": [], "inline_keyboard": []}
-            return build_carousel_card(snap, parts[2], 0)
+            return build_carousel_card(snap, topic_id, 0)
         if sub_verb == "rank":
-            if len(parts) < 4 or parts[2] not in snap.get("topics", {}):
-                return {"text": "⏳ This trending snapshot has expired — see the latest.",
+            topic_id = parts[2] if len(parts) > 2 else ""
+            if topic_id not in topics:
+                topic_id = next(iter(topics), None)
+            if not topic_id:
+                return {"text": "⏳ No trending data yet — check back soon.",
                         "buttons": [], "inline_keyboard": []}
             try:
-                idx = int(parts[3])
+                idx = int(parts[3]) if len(parts) > 3 else 0
             except (ValueError, TypeError):
-                return {"text": "⏳ This trending snapshot has expired — see the latest.",
-                        "buttons": [], "inline_keyboard": []}
-            return build_carousel_card(snap, parts[2], idx)
+                idx = 0
+            posts = topics.get(topic_id, [])
+            idx = min(idx, max(0, len(posts) - 1))
+            return build_carousel_card(snap, topic_id, idx)
         raise ConfigError(f"unknown cb_trend sub-verb: {sub_verb}")
     if verb == "cb_analyze":
         import uuid
         import agent_trigger
         snap = load_snapshot()
+        if snap is None:
+            return {"text": "⏳ No trending data yet — check back soon.",
+                    "buttons": [], "inline_keyboard": []}
         parts = arg.split(":", 2)
         tick_id_cb = parts[0] if parts else ""
-        if snap is None or snap.get("tick_id") != tick_id_cb:
-            return {"text": "⏳ Snapshot đã hết hạn — xem bài mới nhất.",
-                    "buttons": [], "inline_keyboard": []}
         topic_id = parts[1] if len(parts) > 1 else ""
         try:
             idx = int(parts[2]) if len(parts) > 2 else 0
         except (ValueError, TypeError):
             idx = 0
-        posts = snap.get("topics", {}).get(topic_id, [])
-        if idx >= len(posts):
-            return {"text": "⏳ Snapshot đã hết hạn — xem bài mới nhất.",
+        topics = snap.get("topics", {})
+        if topic_id not in topics:
+            topic_id = next(iter(topics), None)
+        if not topic_id:
+            return {"text": "⏳ No trending data yet — check back soon.",
                     "buttons": [], "inline_keyboard": []}
+        posts = topics.get(topic_id, [])
+        idx = min(idx, max(0, len(posts) - 1))
         post = posts[idx]
         meta = snap.get("topic_meta", {}).get(topic_id, {"label": topic_id, "icon": DEFAULT_ICON})
         mode_ref = {"id": topic_id, "label": meta.get("label", topic_id),
@@ -733,7 +744,8 @@ def handle_callback(data, cb, chat_id=None, message_id=None):
         if url and chat_id is not None and message_id is not None:
             payload = agent_trigger.build_payload(
                 job_id=str(uuid.uuid4()), mode=mode_ref, topic=mode_ref,
-                tick_id=tick_id_cb, post=post, chat_id=chat_id, message_id=message_id,
+                tick_id=snap.get("tick_id", tick_id_cb), post=post, chat_id=chat_id,
+                message_id=message_id,
                 callback_url=agent_trigger.callback_url(),
                 callback_token=agent_trigger.callback_token(), agent_url=url)
             agent_trigger.post_job(url, payload)
