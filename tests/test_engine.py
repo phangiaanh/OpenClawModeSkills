@@ -812,7 +812,7 @@ def test_cli_poll_missing_key_errors_when_work_due(cfg, monkeypatch):
     data = engine.load_config(cfg)
     pc = engine.poll_config(data)
     pc["enabled"] = True
-    pc["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}  # always inside
+    pc["window"] = {"start": "00:00", "end": "23:59:59", "tz": "UTC"}  # always inside
     engine.save_config(cfg, data)
     env = dict(os.environ); env.pop("SOCIALCRAWL_API_KEY", None)
     root = Path(__file__).parent.parent
@@ -826,7 +826,7 @@ def test_cli_poll_missing_key_errors_when_work_due(cfg, monkeypatch):
 def test_cli_poll_lock_blocks_second_run(cfg, monkeypatch):
     data = engine.load_config(cfg)
     pc = engine.poll_config(data)
-    pc["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}
+    pc["window"] = {"start": "00:00", "end": "23:59:59", "tz": "UTC"}
     engine.save_config(cfg, data)
     lock = engine._poll_lock_path()
     lock.write_text("999999")
@@ -1015,7 +1015,7 @@ def test_cli_poll_passes_tiktok_region_to_adapter(tmp_path, monkeypatch):
     monkeypatch.setattr(engine, "_poll_lock_path", lambda: tmp_path / "poll.lock")
     data = _poll_data()
     data["modes"]["culture_drama"]["platforms"] = ["tiktok"]
-    data["poll"]["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}  # always inside
+    data["poll"]["window"] = {"start": "00:00", "end": "23:59:59", "tz": "UTC"}  # always inside
     data["poll"]["tiktok_region"] = "VN"
     engine.cli_poll(data)
     assert captured["region"] == "VN"
@@ -1278,7 +1278,7 @@ def test_cli_poll_includes_emit_and_chat_id(tmp_path, monkeypatch):
                          "threads": lambda q, lb, region=None: ([], 100)})
     data = _poll_data()
     data["modes"]["culture_drama"]["topics"]["esports"]["icon"] = "🎮"
-    data["poll"]["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}
+    data["poll"]["window"] = {"start": "00:00", "end": "23:59:59", "tz": "UTC"}
     data["chat_id"] = 12345678
     result = engine.cli_poll(data)
     assert "emit" in result
@@ -1298,7 +1298,7 @@ def test_cli_poll_omits_emit_when_no_chat_id(tmp_path, monkeypatch):
                          "reddit": lambda q, lb, region=None: ([], 100),
                          "threads": lambda q, lb, region=None: ([], 100)})
     data = _poll_data()
-    data["poll"]["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}
+    data["poll"]["window"] = {"start": "00:00", "end": "23:59:59", "tz": "UTC"}
     # no chat_id in data
     result = engine.cli_poll(data)
     assert "emit" not in result
@@ -1323,7 +1323,7 @@ def test_cli_poll_no_emit_when_nothing_scored(tmp_path, monkeypatch):
                          "reddit": lambda q, lb, region=None: ([], 100),
                          "threads": lambda q, lb, region=None: ([], 100)})
     data = _poll_data()
-    data["poll"]["window"] = {"start": "00:00", "end": "23:59", "tz": "UTC"}
+    data["poll"]["window"] = {"start": "00:00", "end": "23:59:59", "tz": "UTC"}
     data["chat_id"] = 12345678
     result = engine.cli_poll(data)
     # No posts logged → snapshot not written this tick → no emit
