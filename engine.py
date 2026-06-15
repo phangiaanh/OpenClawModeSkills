@@ -200,8 +200,10 @@ def poll_config(data):
 
 
 def _parse_hhmm(s):
-    h, m = s.split(":")
-    return _time(int(h), int(m))
+    parts = s.split(":")
+    h, m = int(parts[0]), int(parts[1])
+    sec = int(parts[2]) if len(parts) > 2 else 0
+    return _time(h, m, sec)
 
 
 def in_window(now, window):
