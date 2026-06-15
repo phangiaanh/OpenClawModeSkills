@@ -1421,8 +1421,11 @@ def test_handle_callback_cb_analyze_stub(tmp_path, monkeypatch):
     data = json.loads(FIXTURE.read_text())
     result = engine.handle_callback(data,
                                     f"cb_analyze:{snap['tick_id']}:esports:0")
-    assert result.get("toast") == "📊 Analyze coming soon"
-    assert "text" not in result   # no message edit
+    # card is returned with the Analyze button flipped to processing state
+    assert "text" in result
+    flat = [b for row in result["buttons"] for b in row]
+    assert any("Đang phân tích" in b["text"] for b in flat)
+    assert any(b.get("callback_data") == "cb_noop" for b in flat)
 
 
 def test_handle_callback_cb_analyze_stale(tmp_path, monkeypatch):
@@ -1432,7 +1435,7 @@ def test_handle_callback_cb_analyze_stale(tmp_path, monkeypatch):
     monkeypatch.setenv("EPAPHRAS_SNAPSHOT", str(snap_path))
     data = json.loads(FIXTURE.read_text())
     result = engine.handle_callback(data, "cb_analyze:9999999999:esports:0")
-    assert "expired" in result["text"].lower()
+    assert "hết hạn" in result["text"].lower() or "expired" in result["text"].lower()
     assert result["buttons"] == []
 
 
@@ -1474,3 +1477,42 @@ def test_store_chat_id_cli_missing_arg(tmp_path):
     assert result.returncode == 1
     out = json.loads(result.stdout)
     assert "error" in out
+
+
+def test_cb_analyze_flips_button_and_triggers(monkeypatch, cfg):
+    import engine
+    import agent_trigger
+    data = engine.load_config(cfg)
+    snap = {
+        "tick_id": "123",
+        "topic_order": ["esports"],
+        "topic_meta": {"esports": {"label": "Esports", "icon": "🎯"}},
+        "topics": {"esports": [{
+            "platform": "tiktok", "rank": 1, "post_id": "p1", "url": "https://t/p1",
+            "text": "hi", "author": "@a", "language": "en", "likes": 1, "views": 2,
+            "comments": 3, "shares": 4, "score": 0.04, "age_hours": 1.0,
+        }]},
+    }
+    monkeypatch.setattr(engine, "load_snapshot", lambda: snap)
+    sent = {}
+    monkeypatch.setattr(agent_trigger, "agent_url", lambda: "https://agent/analyze")
+    monkeypatch.setattr(agent_trigger, "post_job",
+                        lambda url, payload, timeout=8: sent.update(payload) or {"status": "accepted"})
+
+    out = engine.handle_callback(data, "cb_analyze:123:esports:0",
+                                 chat_id=7, message_id=9)
+    # button flipped: an inline button now says processing + is inert
+    flat = [b for row in out["buttons"] for b in row]
+    assert any("Đang phân tích" in b["text"] for b in flat)
+    assert any(b.get("callback_data") == "cb_noop" for b in flat)
+    # trigger fired with correct delivery
+    assert sent["delivery"] == {"chat_id": 7, "message_id": 9}
+    assert sent["post"]["post_id"] == "p1"
+
+
+def test_cb_analyze_stale_snapshot(monkeypatch, cfg):
+    import engine
+    data = engine.load_config(cfg)
+    monkeypatch.setattr(engine, "load_snapshot", lambda: {"tick_id": "999"})
+    out = engine.handle_callback(data, "cb_analyze:123:esports:0", chat_id=7, message_id=9)
+    assert "hết hạn" in out["text"].lower() or "expired" in out["text"].lower()

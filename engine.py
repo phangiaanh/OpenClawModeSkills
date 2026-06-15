@@ -426,7 +426,7 @@ def build_carousel_card(snapshot, topic_id, idx):
         tm = snapshot["topic_meta"][tid]
         suffix = "•" if tid == topic_id else ""
         tab_row.append({
-            "text": tm["icon"] + suffix,
+            "text": tm["icon"] + " " + tm["label"] + suffix,
             "callback_data": f"cb_trend:{tick_id}:topic:{tid}",
         })
 
@@ -649,7 +649,7 @@ def toggle_polling(data):
     return render_modes(data)
 
 
-def handle_callback(data, cb):
+def handle_callback(data, cb, chat_id=None, message_id=None):
     if cb == "cb_back":
         return render_modes(data)
     if cb == "cb_newmode":
@@ -708,13 +708,44 @@ def handle_callback(data, cb):
             return build_carousel_card(snap, parts[2], idx)
         raise ConfigError(f"unknown cb_trend sub-verb: {sub_verb}")
     if verb == "cb_analyze":
+        import uuid
+        import agent_trigger
         snap = load_snapshot()
         parts = arg.split(":", 2)
         tick_id_cb = parts[0] if parts else ""
         if snap is None or snap.get("tick_id") != tick_id_cb:
-            return {"text": "⏳ This trending snapshot has expired — see the latest.",
+            return {"text": "⏳ Snapshot đã hết hạn — xem bài mới nhất.",
                     "buttons": [], "inline_keyboard": []}
-        return {"toast": "📊 Analyze coming soon"}
+        topic_id = parts[1] if len(parts) > 1 else ""
+        try:
+            idx = int(parts[2]) if len(parts) > 2 else 0
+        except (ValueError, TypeError):
+            idx = 0
+        posts = snap.get("topics", {}).get(topic_id, [])
+        if idx >= len(posts):
+            return {"text": "⏳ Snapshot đã hết hạn — xem bài mới nhất.",
+                    "buttons": [], "inline_keyboard": []}
+        post = posts[idx]
+        meta = snap.get("topic_meta", {}).get(topic_id, {"label": topic_id, "icon": DEFAULT_ICON})
+        mode_ref = {"id": topic_id, "label": meta.get("label", topic_id),
+                    "icon": meta.get("icon", DEFAULT_ICON)}
+        url = agent_trigger.agent_url()
+        if url and chat_id is not None and message_id is not None:
+            payload = agent_trigger.build_payload(
+                job_id=str(uuid.uuid4()), mode=mode_ref, topic=mode_ref,
+                tick_id=tick_id_cb, post=post, chat_id=chat_id, message_id=message_id,
+                callback_url=agent_trigger.callback_url(),
+                callback_token=agent_trigger.callback_token(), agent_url=url)
+            agent_trigger.post_job(url, payload)
+        # re-render the card with the Analyze button flipped + inert
+        card = build_carousel_card(snap, topic_id, idx)
+        for row in card.get("buttons", []):
+            for btn in row:
+                if str(btn.get("callback_data", "")).startswith("cb_analyze:"):
+                    btn["text"] = "⏳ Đang phân tích…"
+                    btn["callback_data"] = "cb_noop"
+        card["inline_keyboard"] = card["buttons"]
+        return card
     raise ConfigError(f"unknown callback: {cb}")
 
 
@@ -887,6 +918,8 @@ def main(argv=None):
     parser.add_argument("arg", nargs="?", help="mode_id or topic_id")
     parser.add_argument("--file", help="path to modes.yaml")
     parser.add_argument("--mode", help="mode id for render-topics")
+    parser.add_argument("--chat-id", type=int, dest="chat_id", default=None)
+    parser.add_argument("--message-id", type=int, dest="message_id", default=None)
     args = parser.parse_args(argv)
 
     path = resolve_path(args.file)
@@ -944,7 +977,8 @@ def main(argv=None):
             if not args.arg:
                 _emit({"error": "handle-callback requires a callback_data argument"})
                 return 1
-            out = handle_callback(data, args.arg)
+            out = handle_callback(data, args.arg,
+                                  chat_id=args.chat_id, message_id=args.message_id)
             save_config(path, data)
             _emit(out)
         elif args.command == "handle-text":
