@@ -380,34 +380,37 @@ if True:  # always inject
         INJECT_POLL = (
             '// PATCH: ' + POLL_MARKER + ' — hourly poll timer\n'
             '(function _registerEpaphrasPoll() {\n'
-            '  if (globalThis.__epaphrasPollV1) return;\n'
-            '  globalThis.__epaphrasPollV1 = true;\n'
-            '  const { execFileSync } = __require("child_process");\n'
-            '  const _logFs = __require("fs");\n'
-            '  const SKILL_DIR = process.env.EPAPHRAS_SKILL_DIR || "' + _SKILL_DIR + '";\n'
-            '  const INTERVAL_MS = 60 * 60 * 1000;\n'
-            '  _logFs.appendFileSync("/tmp/epaphras_poll.log", new Date().toISOString() + " IIFE_REGISTERED\\n");\n'
-            '  function tick() {\n'
-            '    try {\n'
-            '      const out = execFileSync("python3", [SKILL_DIR + "/engine.py", "poll"],\n'
-            '                              { cwd: SKILL_DIR, env: process.env, timeout: 120000 }).toString().trim();\n'
-            '      _logFs.appendFileSync("/tmp/epaphras_poll.log", new Date().toISOString() + " " + out + "\\n");\n'
+            '  try {\n'
+            '    if (globalThis.__epaphrasPollV1) { process.stderr.write("[EPAPHRAS_POLL] already registered\\n"); return; }\n'
+            '    globalThis.__epaphrasPollV1 = true;\n'
+            '    process.stderr.write("[EPAPHRAS_POLL] IIFE_REGISTERED\\n");\n'
+            '    const { execFileSync: _pollExec } = __require("child_process");\n'
+            '    const _pollFs = __require("fs");\n'
+            '    const SKILL_DIR = process.env.EPAPHRAS_SKILL_DIR || "' + _SKILL_DIR + '";\n'
+            '    const INTERVAL_MS = 60 * 60 * 1000;\n'
+            '    try { _pollFs.appendFileSync("/tmp/epaphras_poll.log", "IIFE_REGISTERED\\n"); } catch (_fw) {}\n'
+            '    function tick() {\n'
             '      try {\n'
-            '        const payload = JSON.parse(out);\n'
-            '        if (payload && payload.emit && payload.chat_id) {\n'
-            '          // bot is the grammY Bot instance at bundle module scope\n'
-            '          bot.api.sendMessage(payload.chat_id, payload.emit.text || "(no text)", {\n'
-            '            reply_markup: { inline_keyboard: payload.emit.buttons }\n'
-            '          }).catch(e => {\n'
-            '            try { _logFs.appendFileSync("/tmp/epaphras_poll.log", new Date().toISOString() + " SEND_ERR " + String(e) + "\\n"); } catch (_) {}\n'
-            '          });\n'
-            '        }\n'
-            '      } catch (_pe) {}\n'
-            '    } catch (e) {\n'
-            '      try { _logFs.appendFileSync("/tmp/epaphras_poll.log", new Date().toISOString() + " ERR " + String(e.message || e) + "\\n"); } catch (_) {}\n'
+            '        const out = _pollExec("python3", [SKILL_DIR + "/engine.py", "poll"],\n'
+            '                              { cwd: SKILL_DIR, env: process.env, timeout: 120000 }).toString().trim();\n'
+            '        process.stderr.write("[EPAPHRAS_POLL] tick: " + out.substring(0, 200) + "\\n");\n'
+            '        try { _pollFs.appendFileSync("/tmp/epaphras_poll.log", out + "\\n"); } catch (_fw) {}\n'
+            '        try {\n'
+            '          const payload = JSON.parse(out);\n'
+            '          if (payload && payload.emit && payload.chat_id) {\n'
+            '            bot.api.sendMessage(payload.chat_id, payload.emit.text || "(no text)", {\n'
+            '              reply_markup: { inline_keyboard: payload.emit.buttons }\n'
+            '            }).catch(e => { process.stderr.write("[EPAPHRAS_POLL] SEND_ERR " + String(e) + "\\n"); });\n'
+            '          }\n'
+            '        } catch (_pe) {}\n'
+            '      } catch (e) {\n'
+            '        process.stderr.write("[EPAPHRAS_POLL] ERR " + String(e.message || e) + "\\n");\n'
+            '      }\n'
             '    }\n'
+            '    setInterval(tick, INTERVAL_MS);\n'
+            '  } catch (_outerErr) {\n'
+            '    process.stderr.write("[EPAPHRAS_POLL] OUTER_ERR " + String(_outerErr) + "\\n");\n'
             '  }\n'
-            '  setInterval(tick, INTERVAL_MS);\n'
             '})();\n'
             '// END PATCH: ' + POLL_MARKER + '\n'
         )
@@ -482,3 +485,34 @@ else:
                 _os5.remove(_jiti5); print(f"Deleted JITI cache: {_jiti5}")
             except Exception as _e5:
                 print(f"WARNING: could not delete JITI TS cache {_jiti5}: {_e5}")
+
+# ─── Start poll daemon ────────────────────────────────────────────────────────
+# Launch poll_daemon.py as a background process. Idempotent: checks PID file
+# and skips if a live daemon is already running.
+import subprocess as _sd, os as _osd
+
+_DAEMON_SCRIPT = ENGINE_PATH.rsplit('/', 1)[0] + '/poll_daemon.py'
+_DAEMON_PID_FILE = '/tmp/poll_daemon.pid'
+
+def _daemon_alive():
+    try:
+        with open(_DAEMON_PID_FILE) as _f:
+            _pid = int(_f.read().strip())
+        _osd.kill(_pid, 0)
+        return True
+    except Exception:
+        return False
+
+if _osd.path.exists(_DAEMON_SCRIPT):
+    if _daemon_alive():
+        print("Poll daemon already running — skipping start")
+    else:
+        _proc = _sd.Popen(
+            ['python3', _DAEMON_SCRIPT],
+            stdout=open('/tmp/poll_daemon_stdout.log', 'a'),
+            stderr=_sd.STDOUT,
+            close_fds=True,
+        )
+        print(f"Started poll daemon PID={_proc.pid}")
+else:
+    print(f"WARNING: {_DAEMON_SCRIPT} not found — poll daemon not started")

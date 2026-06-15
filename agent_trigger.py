@@ -18,6 +18,22 @@ def callback_token() -> str:
     return os.environ.get("OPENCLAW_GATEWAY_TOKEN", "")
 
 
+def _read_bot_token() -> str:
+    t = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if t:
+        return t
+    cfg = os.path.expanduser("~/.openclaw/openclaw.json")
+    try:
+        import re
+        with open(cfg) as f:
+            m = re.search(r'"botToken"\s*:\s*"([^"]+)"', f.read())
+            if m:
+                return m.group(1)
+    except Exception:
+        pass
+    return ""
+
+
 def build_payload(*, job_id, mode, topic, tick_id, post, chat_id, message_id,
                   callback_url, callback_token, agent_url):
     return {
@@ -34,7 +50,8 @@ def build_payload(*, job_id, mode, topic, tick_id, post, chat_id, message_id,
             "score": post.get("score", 0.0), "age_hours": post.get("age_hours", 0.0),
         },
         "delivery": {"chat_id": chat_id, "message_id": message_id},
-        "callback": {"url": callback_url, "token": callback_token},
+        "callback": {"url": callback_url, "token": callback_token,
+                     "bot_token": _read_bot_token()},
     }
 
 
